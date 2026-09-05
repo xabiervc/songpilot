@@ -1,0 +1,2 @@
+# No external dependencies required for songpilot_core.
+# Tests use the Python standard library (unittest).
