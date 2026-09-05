@@ -1,0 +1,79 @@
+name: SongPilot Flutter CI
+
+# This workflow gives you real, verified builds without needing a local
+# Flutter/Xcode/Android SDK install. It runs `flutter test` (catching any
+# compile or logic errors), then builds an Android APK and an unsigned iOS
+# app on GitHub's cloud runners.
+#
+# The Flutter app lives in flutter_app/, so every step runs there.
+# iOS builds require macOS, which is why the ios job uses
+# `runs-on: macos-latest`. Signing for real App Store distribution needs
+# your Apple Developer certificates added as GitHub secrets — see
+# flutter_app/docs/CI_SETUP.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+defaults:
+  run:
+    working-directory: flutter_app
+
+jobs:
+  test:
+    name: Analyze & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze
+      - name: Run tests
+        run: flutter test
+
+  build_android:
+    name: Build Android APK
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Build APK
+        run: flutter build apk --release
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: songpilot-android
+          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+
+  build_ios:
+    name: Build iOS (unsigned)
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign
+      - name: Upload iOS build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: songpilot-ios-unsigned
+          path: flutter_app/build/ios/iphoneos/Runner.app
