@@ -48,6 +48,8 @@ jobs:
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
+      - name: Generate Android and iOS platform projects
+        run: flutter create --platforms=android,ios .
       - name: Install dependencies
         run: flutter pub get
       - name: Build APK
@@ -68,6 +70,8 @@ jobs:
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
+      - name: Generate Android and iOS platform projects
+        run: flutter create --platforms=android,ios .
       - name: Install dependencies
         run: flutter pub get
       - name: Build iOS (no codesign)
