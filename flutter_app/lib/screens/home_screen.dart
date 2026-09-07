@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../main.dart';
 
 /// Home dashboard: recent projects + quick actions.
 /// Project data fetching from Supabase is stubbed with TODOs — wire up

@@ -50,6 +50,12 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   @override
+  void dispose() {
+    _chordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Song: ${widget.projectId}')),
@@ -68,7 +74,7 @@ class _EditorScreenState extends State<EditorScreen> {
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  initialValue: _selectedKey,
+                  value: _selectedKey,
                   decoration: const InputDecoration(labelText: 'Key'),
                   items: _keys
                       .map((k) => DropdownMenuItem(value: k, child: Text(k)))
@@ -79,7 +85,7 @@ class _EditorScreenState extends State<EditorScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  initialValue: _selectedStyle,
+                  value: _selectedStyle,
                   decoration: const InputDecoration(labelText: 'Style'),
                   items: _styles
                       .map((s) => DropdownMenuItem(value: s, child: Text(s)))
@@ -90,7 +96,7 @@ class _EditorScreenState extends State<EditorScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  initialValue: _selectedMood,
+                  value: _selectedMood,
                   decoration: const InputDecoration(labelText: 'Mood'),
                   items: _moods
                       .map((m) => DropdownMenuItem(value: m, child: Text(m)))

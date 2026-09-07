@@ -9,16 +9,16 @@ import 'screens/editor_screen.dart';
 import 'screens/collab_screen.dart';
 import 'screens/profile_screen.dart';
 
-// TODO: replace with your real Supabase project URL and anon key before
+// TODO: replace with your real Supabase project URL and publishable key before
 // running. Get these from your Supabase project settings.
 const supabaseUrl = 'https://YOUR_PROJECT.supabase.co';
-const supabaseAnonKey = 'YOUR_ANON_KEY';
+const supabasePublishableKey = 'YOUR_ANON_KEY';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
     url: supabaseUrl,
-    anonKey: supabaseAnonKey,
+    publishableKey: supabasePublishableKey,
   );
   runApp(const ProviderScope(child: SongPilotApp()));
 }
