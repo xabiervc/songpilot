@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../core/music_theory.dart';
+import '../core/song_form.dart';
 import '../core/suggestion_engine.dart';
 import '../models/models.dart';
 import '../services/supabase_service.dart';
 
-/// Song editor: chord input + suggestion panel + Supabase persistence.
-/// Suggestions come from the tested songpilot_core Dart logic
-/// (music_theory.dart, suggestion_engine.dart).
+/// Song editor: multi-section arrangement + suggestion panel + persistence.
 class EditorScreen extends StatefulWidget {
   final String projectId;
   const EditorScreen({super.key, required this.projectId});
@@ -16,8 +15,35 @@ class EditorScreen extends StatefulWidget {
   State<EditorScreen> createState() => _EditorScreenState();
 }
 
+/// Editable draft for one section in the arrangement.
+class _SectionDraft {
+  _SectionDraft({
+    required this.sectionType,
+    String chordsText = '',
+    this.barCount = 4,
+  }) : chordsController = TextEditingController(text: chordsText);
+
+  SectionType sectionType;
+  final TextEditingController chordsController;
+  int barCount;
+
+  void dispose() => chordsController.dispose();
+
+  List<String> get parsedChords => chordsController.text
+      .split(',')
+      .map((c) => c.trim())
+      .where((c) => c.isNotEmpty)
+      .toList();
+
+  SongSection toSection(String key) => SongSection(
+        sectionType: sectionType,
+        key: key,
+        chords: parsedChords,
+        barCount: barCount,
+      );
+}
+
 class _EditorScreenState extends State<EditorScreen> {
-  late final TextEditingController _chordController;
   late final TextEditingController _titleController;
   late String _projectId;
 
@@ -25,8 +51,10 @@ class _EditorScreenState extends State<EditorScreen> {
   String _selectedStyle = 'rock';
   String _selectedMood = 'driving';
   List<Suggestion> _suggestions = [];
+  List<_SectionDraft> _sections = [];
   String? _error;
   bool _saving = false;
+  bool _loading = false;
 
   final List<String> _styles = ['rock', 'pop', 'blues', 'jazz', 'indie'];
   final List<String> _moods = [
@@ -43,23 +71,57 @@ class _EditorScreenState extends State<EditorScreen> {
   void initState() {
     super.initState();
     _projectId = widget.projectId;
-    _chordController = TextEditingController(text: 'C, F, G');
     _titleController = TextEditingController();
+    _sections = [_SectionDraft(sectionType: SectionType.verse)];
     _getSuggestions();
+    _loadProject();
   }
 
   @override
   void dispose() {
-    _chordController.dispose();
     _titleController.dispose();
+    for (final draft in _sections) {
+      draft.dispose();
+    }
     super.dispose();
   }
 
-  List<String> get _parsedChords => _chordController.text
-      .split(',')
-      .map((c) => c.trim())
-      .where((c) => c.isNotEmpty)
-      .toList();
+  Future<void> _loadProject() async {
+    if (_projectId == 'new') return;
+    setState(() => _loading = true);
+    try {
+      final project = await ProjectService().getProject(_projectId);
+      if (!mounted) return;
+      if (project == null) {
+        setState(() => _error = 'Song not found.');
+        return;
+      }
+      setState(() {
+        for (final draft in _sections) {
+          draft.dispose();
+        }
+        _titleController.text = project.title;
+        _selectedKey = project.key;
+        _selectedStyle = project.style;
+        _selectedMood = project.mood;
+        _sections = project.sections.isEmpty
+            ? [_SectionDraft(sectionType: SectionType.verse)]
+            : [
+                for (final s in project.sections)
+                  _SectionDraft(
+                    sectionType: s.sectionType,
+                    chordsText: s.chords.join(', '),
+                    barCount: s.barCount,
+                  ),
+              ];
+      });
+      _getSuggestions();
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   void _getSuggestions() {
     setState(() {
@@ -77,24 +139,69 @@ class _EditorScreenState extends State<EditorScreen> {
     });
   }
 
+  int get _totalBars => _sections.fold(0, (sum, d) => sum + d.barCount);
+
+  void _addSection() {
+    setState(() =>
+        _sections.add(_SectionDraft(sectionType: SectionType.verse)));
+  }
+
+  void _removeSection(int index) {
+    if (_sections.length <= 1) return;
+    setState(() {
+      final removed = _sections.removeAt(index);
+      removed.dispose();
+    });
+  }
+
+  void _moveSection(int index, int delta) {
+    final targetIndex = index + delta;
+    if (targetIndex < 0 || targetIndex >= _sections.length) return;
+    setState(() {
+      final item = _sections.removeAt(index);
+      _sections.insert(targetIndex, item);
+    });
+  }
+
+  void _changeBars(int index, int delta) {
+    setState(() {
+      final next = _sections[index].barCount + delta;
+      if (next >= 1 && next <= 64) {
+        _sections[index].barCount = next;
+      }
+    });
+  }
+
+  void _applySuggestion(Suggestion s) {
+    final lastType =
+        _sections.isEmpty ? SectionType.verse : _sections.last.sectionType;
+    setState(() {
+      _sections.add(
+        _SectionDraft(
+          sectionType: nextSectionAfter(lastType),
+          chordsText: s.chords.join(', '),
+          barCount: s.chords.length,
+        ),
+      );
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Suggestion added to arrangement')),
+    );
+  }
+
   Future<void> _saveProject() async {
     setState(() {
       _error = null;
       _saving = true;
     });
     try {
-      final chords = _parsedChords;
-      for (final chord in chords) {
-        parseChord(chord); // validates; throws InvalidChordError on bad input
+      for (final draft in _sections) {
+        for (final chord in draft.parsedChords) {
+          parseChord(chord); // validates; throws InvalidChordError on bad input
+        }
       }
 
       final title = _titleController.text.trim();
-      final section = SongSection(
-        sectionType: SectionType.verse,
-        key: _selectedKey,
-        chords: chords,
-        barCount: chords.isEmpty ? 4 : chords.length,
-      );
       final project = SongProject(
         projectId: _projectId == 'new' ? '' : _projectId,
         ownerId: '',
@@ -102,7 +209,9 @@ class _EditorScreenState extends State<EditorScreen> {
         key: _selectedKey,
         style: _selectedStyle,
         mood: _selectedMood,
-        sections: [section],
+        sections: [
+          for (final d in _sections) d.toSection(_selectedKey),
+        ],
       );
 
       final saved = await ProjectService().saveProject(project);
@@ -124,88 +233,286 @@ class _EditorScreenState extends State<EditorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Song: $_projectId'),
+        title: const Text('Song editor'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.save_outlined),
-            tooltip: 'Save song',
-            onPressed: _saving ? null : _saveProject,
-          ),
+          if (_saving)
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: CircularProgressIndicator(),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.save_outlined),
+              tooltip: 'Save song',
+              onPressed: _saving || _loading ? null : _saveProject,
+            ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: _loading && _sections.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                TextField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    labelText: 'Song title',
+                    hintText: 'e.g. Midnight Groove',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _selectedKey,
+                        decoration: const InputDecoration(labelText: 'Key'),
+                        items: _keys
+                            .map((k) =>
+                                DropdownMenuItem(value: k, child: Text(k)))
+                            .toList(),
+                        onChanged: (v) => setState(
+                            () => _selectedKey = v ?? _selectedKey),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _selectedStyle,
+                        decoration: const InputDecoration(labelText: 'Style'),
+                        items: _styles
+                            .map((s) =>
+                                DropdownMenuItem(value: s, child: Text(s)))
+                            .toList(),
+                        onChanged: (v) => setState(
+                            () => _selectedStyle = v ?? _selectedStyle),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _selectedMood,
+                        decoration: const InputDecoration(labelText: 'Mood'),
+                        items: _moods
+                            .map((m) =>
+                                DropdownMenuItem(value: m, child: Text(m)))
+                            .toList(),
+                        onChanged: (v) => setState(
+                            () => _selectedMood = v ?? _selectedMood),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Text('Arrangement',
+                        style: Theme.of(context).textTheme.titleLarge),
+                    const Spacer(),
+                    Text('$_totalBars bars',
+                        style: Theme.of(context).textTheme.labelMedium),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (_sections.isEmpty)
+                  const _EmptyArrangementState()
+                else
+                  ...[
+                    for (var i = 0; i < _sections.length; i++)
+                      _SectionCard(
+                        index: i,
+                        draft: _sections[i],
+                        totalSections: _sections.length,
+                        onRemove: () => _removeSection(i),
+                        onMoveUp: () => _moveSection(i, -1),
+                        onMoveDown: () => _moveSection(i, 1),
+                        onBarsChanged: (d) => _changeBars(i, d),
+                      ),
+                  ],
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _addSection,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add section'),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: _saving || _loading ? null : _saveProject,
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Save song'),
+                ),
+                const SizedBox(height: 24),
+                Text('Suggestions',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: _getSuggestions,
+                  icon: const Icon(Icons.auto_awesome),
+                  label: const Text('Suggest next'),
+                ),
+                const SizedBox(height: 12),
+                if (_error != null)
+                  Text(_error!,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
+                if (_suggestions.isEmpty)
+                  const _EmptySuggestionsState()
+                else
+                  ..._suggestions.map(
+                    (s) => _SuggestionCard(
+                      suggestion: s,
+                      onApply: () => _applySuggestion(s),
+                    ),
+                  ),
+              ],
+            ),
+    );
+  }
+}
+
+class _EmptyArrangementState extends StatelessWidget {
+  const _EmptyArrangementState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Column(
         children: [
-          TextField(
-            controller: _titleController,
-            decoration: const InputDecoration(
-              labelText: 'Song title',
-              hintText: 'e.g. Midnight Groove',
-            ),
-          ),
+          Icon(Icons.queue_music_outlined,
+              size: 48, color: Theme.of(context).colorScheme.outline),
           const SizedBox(height: 12),
-          TextField(
-            controller: _chordController,
-            decoration: const InputDecoration(
-              labelText: 'Your idea (chords, comma separated)',
-              hintText: 'e.g. Amaj7, C#m7, D, E',
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _selectedKey,
-                  decoration: const InputDecoration(labelText: 'Key'),
-                  items: _keys
-                      .map((k) => DropdownMenuItem(value: k, child: Text(k)))
-                      .toList(),
-                  onChanged: (v) =>
-                      setState(() => _selectedKey = v ?? _selectedKey),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _selectedStyle,
-                  decoration: const InputDecoration(labelText: 'Style'),
-                  items: _styles
-                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                      .toList(),
-                  onChanged: (v) =>
-                      setState(() => _selectedStyle = v ?? _selectedStyle),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _selectedMood,
-                  decoration: const InputDecoration(labelText: 'Mood'),
-                  items: _moods
-                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                      .toList(),
-                  onChanged: (v) =>
-                      setState(() => _selectedMood = v ?? _selectedMood),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _getSuggestions,
-            icon: const Icon(Icons.auto_awesome),
-            label: const Text('Suggest next'),
-          ),
-          const SizedBox(height: 24),
-          if (_error != null)
-            Text(_error!,
-                style:
-                    TextStyle(color: Theme.of(context).colorScheme.error)),
-          Text('Suggestions', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          ..._suggestions.map((s) => _SuggestionCard(suggestion: s)),
+          const Text('No sections yet'),
+          const SizedBox(height: 4),
+          const Text('Add your first verse or apply a suggestion below.'),
         ],
+      ),
+    );
+  }
+}
+
+class _EmptySuggestionsState extends StatelessWidget {
+  const _EmptySuggestionsState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Column(
+        children: [
+          Icon(Icons.auto_awesome_outlined,
+              size: 48, color: Theme.of(context).colorScheme.outline),
+          const SizedBox(height: 12),
+          const Text('No suggestions yet'),
+          const SizedBox(height: 4),
+          const Text(
+              'Tap "Suggest next" for starter chords, styles, and theory.'),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  final int index;
+  final _SectionDraft draft;
+  final int totalSections;
+  final VoidCallback onRemove;
+  final VoidCallback onMoveUp;
+  final VoidCallback onMoveDown;
+  final ValueChanged<int> onBarsChanged;
+
+  const _SectionCard({
+    required this.index,
+    required this.draft,
+    required this.totalSections,
+    required this.onRemove,
+    required this.onMoveUp,
+    required this.onMoveDown,
+    required this.onBarsChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final typeOptions = SectionType.values;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('${index + 1}',
+                    style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<SectionType>(
+                    initialValue: draft.sectionType,
+                    decoration: const InputDecoration(
+                      labelText: 'Section',
+                      isDense: true,
+                    ),
+                    items: typeOptions
+                        .map((t) => DropdownMenuItem(
+                              value: t,
+                              child: Text(sectionTypeLabels[t] ?? t.name),
+                            ))
+                        .toList(),
+                    onChanged: (t) => draft.sectionType = t ?? draft.sectionType,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: draft.chordsController,
+              decoration: const InputDecoration(
+                labelText: 'Chords (comma separated)',
+                hintText: 'e.g. Am, G, F, E',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Text('Bars'),
+                IconButton(
+                  icon: const Icon(Icons.remove),
+                  tooltip: 'Fewer bars',
+                  onPressed: draft.barCount <= 1
+                      ? null
+                      : () => onBarsChanged(-1),
+                ),
+                Text('${draft.barCount}'),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  tooltip: 'More bars',
+                  onPressed: draft.barCount >= 64
+                      ? null
+                      : () => onBarsChanged(1),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.arrow_upward),
+                  tooltip: 'Move up',
+                  onPressed: index > 0 ? onMoveUp : null,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.arrow_downward),
+                  tooltip: 'Move down',
+                  onPressed: index < totalSections - 1 ? onMoveDown : null,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Remove section',
+                  onPressed: totalSections > 1 ? onRemove : null,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -213,7 +520,9 @@ class _EditorScreenState extends State<EditorScreen> {
 
 class _SuggestionCard extends StatefulWidget {
   final Suggestion suggestion;
-  const _SuggestionCard({required this.suggestion});
+  final VoidCallback onApply;
+
+  const _SuggestionCard({required this.suggestion, required this.onApply});
 
   @override
   State<_SuggestionCard> createState() => _SuggestionCardState();
@@ -240,9 +549,20 @@ class _SuggestionCardState extends State<_SuggestionCard> {
             Text('${s.style} · ${s.mood}',
                 style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => setState(() => _showTheory = !_showTheory),
-              child: Text(_showTheory ? 'Hide theory' : 'Why this works?'),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () =>
+                      setState(() => _showTheory = !_showTheory),
+                  child: Text(_showTheory ? 'Hide theory' : 'Why this works?'),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: widget.onApply,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add to arrangement'),
+                ),
+              ],
             ),
             if (_showTheory) Text(s.explanation),
           ],

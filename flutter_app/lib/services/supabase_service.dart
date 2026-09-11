@@ -65,9 +65,34 @@ class ProjectService {
     return [for (final row in rows) SongProject.fromJson(row)];
   }
 
+  /// Loads a single song with its sections, ordered by section position.
+  /// Returns null if the song doesn't exist or isn't visible to the user.
+  Future<SongProject?> getProject(String projectId) async {
+    final userId = _requireUserId();
+    final songRows = await _client
+        .from('songs')
+        .select()
+        .eq('id', projectId)
+        .eq('owner_id', userId)
+        .limit(1);
+    if (songRows.isEmpty) return null;
+
+    final sectionRows = await _client
+        .from('song_sections')
+        .select()
+        .eq('song_id', projectId)
+        .order('position', ascending: true);
+
+    final project = SongProject.fromJson(songRows.first);
+    for (final row in sectionRows) {
+      project.addSection(SongSection.fromJson(row));
+    }
+    return project;
+  }
+
   /// Inserts the song when projectId is empty/'new', otherwise upserts it.
-  /// Sections are fully replaced for simplicity while the editor works on a
-  /// single section at a time.
+  /// Sections are fully replaced for simplicity while the editor works on the
+  /// whole arrangement at once (cheap at small scale, consistent restore).
   Future<SongProject> saveProject(SongProject project) async {
     final userId = _requireUserId();
     final row = project.toJson()
