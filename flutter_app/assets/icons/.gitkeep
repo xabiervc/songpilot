@@ -1,0 +1,4 @@
+# This file preserves the icons directory in Git.
+# Place production launcher assets here:
+# - icon.png    (1024x1024 base launcher icon)
+# - icon_fg.png (1024x1024 transparent Android adaptive-icon foreground)
