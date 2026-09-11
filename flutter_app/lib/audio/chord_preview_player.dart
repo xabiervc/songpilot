@@ -11,11 +11,15 @@ class ChordPreviewPlayer {
 
   final AudioPlayer _player = AudioPlayer();
 
+  /// Synth color for previews. [SynthTone.plucked] (Karplus-Strong) sounds
+  /// like a plucked guitar; [SynthTone.pure] is the minimal sine reference.
+  SynthTone tone = SynthTone.pure;
+
   /// Renders and plays the chord sequence. Safe to spam: a new play() call
   /// stops whatever is currently playing first.
   Future<void> playChords(List<String> chords) async {
     if (chords.isEmpty) return;
-    final wav = synthesizeProgressionWav(chords);
+    final wav = synthesizeProgressionWav(chords, tone: tone);
     await _player.stop();
     await _player.play(BytesSource(wav));
   }

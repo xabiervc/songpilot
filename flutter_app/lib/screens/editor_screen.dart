@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../audio/chord_preview_player.dart';
 import '../audio/mic_note_listener.dart';
+import '../audio/wav_synth.dart';
 import '../core/chord_shapes.dart';
 import '../core/music_theory.dart';
 import '../core/song_form.dart';
@@ -78,6 +79,7 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _loading = false;
   bool _previewingAll = false;
   bool _recording = false;
+  bool _naturalSound = false;
 
   final List<String> _styles = ['rock', 'pop', 'blues', 'jazz', 'indie'];
   final List<String> _moods = [
@@ -244,6 +246,12 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  void _toggleNaturalSound() {
+    setState(() => _naturalSound = !_naturalSound);
+    _previewPlayer.tone =
+        _naturalSound ? SynthTone.plucked : SynthTone.pure;
+  }
+
   Future<void> _previewSection(int index) async {
     if (index < 0 || index >= _sections.length) return;
     await _previewPlayer.playChords(_sections[index].parsedChords);
@@ -383,6 +391,15 @@ class _EditorScreenState extends State<EditorScreen> {
       appBar: AppBar(
         title: const Text('Song editor'),
         actions: [
+          IconButton(
+            icon: Icon(_naturalSound
+                ? Icons.graphic_eq
+                : Icons.music_note_outlined),
+            tooltip: _naturalSound
+                ? 'Natural pluck sound: on'
+                : 'Natural pluck sound: off',
+            onPressed: _toggleNaturalSound,
+          ),
           if (_saving)
             const Padding(
               padding: EdgeInsets.only(right: 8),

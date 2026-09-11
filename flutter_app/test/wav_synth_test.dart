@@ -51,7 +51,7 @@ void main() {
     });
   });
 
-  group('synthesizeProgressionWav', () {
+  group('synthesizeProgressionWav (pure tone)', () {
     test('empty input produces header-only WAV', () {
       final wav = synthesizeProgressionWav(const [], sampleRate: 1000);
       expect(wav.length, 44);
@@ -100,6 +100,66 @@ void main() {
           secondsPerChord: 0.1, sampleRate: 1000, maxChords: 24);
       // 24 chords * 0.1s * 1000 frames * 2 bytes + header
       expect(wav.length, 44 + 24 * 100 * 2);
+    });
+  });
+
+  group('synthesizeProgressionWav (plucked tone)', () {
+    test('same framing as pure tone', () {
+      final wav = synthesizeProgressionWav(
+        const ['C', 'G'],
+        secondsPerChord: 0.5,
+        sampleRate: 1000,
+        tone: SynthTone.plucked,
+      );
+      expect(wav.length, 44 + 2 * 500 * 2);
+    });
+
+    test('deterministic: same input gives identical bytes', () {
+      final a = synthesizeProgressionWav(
+        const ['Am', 'G'],
+        secondsPerChord: 0.3,
+        sampleRate: 8000,
+        tone: SynthTone.plucked,
+      );
+      final b = synthesizeProgressionWav(
+        const ['Am', 'G'],
+        secondsPerChord: 0.3,
+        sampleRate: 8000,
+        tone: SynthTone.plucked,
+      );
+      expect(a, equals(b));
+    });
+
+    test('differs from pure tone', () {
+      final pure = synthesizeProgressionWav(
+        const ['C'],
+        secondsPerChord: 0.3,
+        sampleRate: 8000,
+      );
+      final plucked = synthesizeProgressionWav(
+        const ['C'],
+        secondsPerChord: 0.3,
+        sampleRate: 8000,
+        tone: SynthTone.plucked,
+      );
+      expect(pure, isNot(equals(plucked)));
+    });
+
+    test('samples stay within int16 range', () {
+      final wav = synthesizeProgressionWav(
+        const ['C', 'F', 'G'],
+        secondsPerChord: 0.3,
+        sampleRate: 16000,
+        tone: SynthTone.plucked,
+      );
+      final data = ByteData.sublistView(wav);
+      var maxAbs = 0;
+      for (var i = 44; i < wav.length; i += 2) {
+        final v = data.getInt16(i, Endian.little).abs();
+        if (v > maxAbs) maxAbs = v;
+      }
+      expect(maxAbs, lessThanOrEqualTo(32767));
+      expect(maxAbs, greaterThan(0)); // actually produced sound
     });
   });
 }

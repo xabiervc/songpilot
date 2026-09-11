@@ -1,9 +1,9 @@
 /// Pure-Dart WAV synthesizer for chord previews.
 ///
-/// Renders chords as summed sine waves (with a bass root an octave down) and
-/// a soft attack/release envelope, wrapped in a 16-bit PCM WAV header.
-/// No assets, no platform plugins — keeps the preview path fully testable
-/// with plain `package:test`.
+/// Two tones:
+///  - [SynthTone.pure]: summed sine waves (with a bass root an octave down).
+///  - [SynthTone.plucked]: Karplus-Strong plucked-string model per note,
+///    a much more guitar-like color with no audio assets required.
 library wav_synth;
 
 import 'dart:math' as math;
@@ -12,6 +12,8 @@ import 'dart:typed_data';
 import '../core/music_theory.dart';
 
 const int defaultSampleRate = 22050;
+
+enum SynthTone { pure, plucked }
 
 /// Frequency of a MIDI note number (A4 = 69 = 440 Hz).
 double midiToFreq(int midiNote) =>
@@ -53,6 +55,35 @@ double _envelope(int frame, int totalFrames, int sampleRate) {
   return 1.0;
 }
 
+/// Karplus-Strong plucked string into `out` starting at `offset`.
+/// Deterministic: the excitation noise is seeded from the frequency.
+void _pluckedInto(
+  Float64List out,
+  int offset,
+  double frequency, {
+  required int frames,
+  required int sampleRate,
+  required double gain,
+}) {
+  final periodRaw = sampleRate / frequency;
+  final period = periodRaw < 2 ? 2 : (periodRaw > sampleRate ? sampleRate : periodRaw.round());
+  final ring = Float64List(period);
+  final random = math.Random((frequency * 1000).round());
+  for (var i = 0; i < period; i++) {
+    ring[i] = random.nextDouble() * 2 - 1;
+  }
+  var idx = 0;
+  const damping = 0.996;
+  for (var f = 0; f < frames && offset + f < out.length; f++) {
+    final current = ring[idx];
+    final next = ring[(idx + 1) % period];
+    final damped = (current + next) * 0.5 * damping;
+    ring[idx] = damped;
+    out[offset + f] += damped * gain;
+    idx = (idx + 1) % period;
+  }
+}
+
 /// Builds a mono 16-bit PCM WAV for a chord sequence.
 /// Chords longer than [maxChords] are truncated to keep previews snappy.
 Uint8List synthesizeProgressionWav(
@@ -60,6 +91,7 @@ Uint8List synthesizeProgressionWav(
   double secondsPerChord = 0.7,
   int sampleRate = defaultSampleRate,
   int maxChords = 24,
+  SynthTone tone = SynthTone.pure,
 }) {
   final limited = chords.take(maxChords).toList();
   final framesPerChord = (secondsPerChord * sampleRate).round();
@@ -103,19 +135,37 @@ Uint8List synthesizeProgressionWav(
   for (var ci = 0; ci < limited.length; ci++) {
     final midis = chordToMidis(limited[ci]);
     final start = ci * framesPerChord;
-    for (var f = 0; f < framesPerChord; f++) {
-      final t = f / sampleRate;
-      final env = _envelope(f, framesPerChord, sampleRate);
-      var mix = 0.0;
-      for (final m in midis) {
-        mix += math.sin(2 * math.pi * midiToFreq(m) * t);
-      }
-      samples[start + f] = (mix / midis.length) * env * 0.6;
+    switch (tone) {
+      case SynthTone.pure:
+        for (var f = 0; f < framesPerChord; f++) {
+          final t = f / sampleRate;
+          final env = _envelope(f, framesPerChord, sampleRate);
+          var mix = 0.0;
+          for (final m in midis) {
+            mix += math.sin(2 * math.pi * midiToFreq(m) * t);
+          }
+          samples[start + f] = (mix / midis.length) * env * 0.6;
+        }
+      case SynthTone.plucked:
+        final gain = 0.9 / midis.length;
+        for (final m in midis) {
+          _pluckedInto(
+            samples,
+            start,
+            midiToFreq(m),
+            frames: framesPerChord,
+            sampleRate: sampleRate,
+            gain: gain,
+          );
+        }
     }
   }
 
   for (var i = 0; i < totalFrames; i++) {
-    final v = (samples[i] * 32767).round();
+    var sample = samples[i];
+    if (sample > 0.95) sample = 0.95;
+    if (sample < -0.95) sample = -0.95;
+    final v = (sample * 32767).round();
     final clamped = v < -32768 ? -32768 : (v > 32767 ? 32767 : v);
     bytes.setInt16(44 + i * 2, clamped, Endian.little);
   }
