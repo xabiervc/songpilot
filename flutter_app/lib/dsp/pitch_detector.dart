@@ -29,21 +29,22 @@ double _freqOf(int midi) =>
     (440.0 * math.pow(2.0, (midi - 69) / 12.0)).toDouble();
 
 /// Goertzel power of `samples` at target frequency `freq` (Hz).
+///
+/// Recurrence: s[n] = x[n] + 2*cos(w)*s[n-1] - s[n-2], w = 2*pi*freq/rate.
+/// After N steps, power = s[N-1]^2 + s[N-2]^2 - 2*cos(w)*s[N-1]*s[N-2].
 double _goertzelPower(List<double> samples, double freq, int sampleRate) {
   final n = samples.length;
   if (n == 0) return 0;
-  final k = n * freq / sampleRate;
-  final omega = 2 * math.pi * k / n;
+  final omega = 2 * math.pi * freq / sampleRate;
   final coeff = 2 * math.cos(omega);
-  var q0 = 0.0;
-  var q1 = 0.0;
-  var q2 = 0.0;
-  for (final s in samples) {
-    q0 = coeff * q1 - q2 + s;
-    q2 = q1;
-    q1 = q0;
+  var sPrevPrev = 0.0;
+  var sPrev = 0.0;
+  for (final x in samples) {
+    final s = x + coeff * sPrev - sPrevPrev;
+    sPrevPrev = sPrev;
+    sPrev = s;
   }
-  final power = q1 * q1 + q2 * q2 - q0 * q1 * coeff;
+  final power = sPrev * sPrev + sPrevPrev * sPrevPrev - coeff * sPrev * sPrevPrev;
   return power < 0 ? 0.0 : power;
 }
 
@@ -68,20 +69,20 @@ List<PitchClassScore> detectTopNotes(
   if (samples.length < sampleRate ~/ 4) return const []; // < ~250ms is noise
 
   // Per pitch class: strongest octave energy.
+  // noteNames[0] == 'C' and MIDI 60 == C4, so midi % 12 maps directly.
   final bestPerClass = List<double>.filled(12, 0);
   for (var midi = _minMidi; midi <= _maxMidi; midi++) {
     final power = _goertzelPower(samples, _freqOf(midi), sampleRate);
-    final midiIndex = midi % 12;
-    final midiClass = (9 + midiIndex) % 12; // MIDI 69 = A is index of 'A'
-    if (power > bestPerClass[midiClass]) {
-      bestPerClass[midiClass] = power;
+    final pitchClass = midi % 12;
+    if (power > bestPerClass[pitchClass]) {
+      bestPerClass[pitchClass] = power;
     }
   }
 
   final peak = bestPerClass.reduce(math.max);
   if (peak <= 0) return const [];
 
-  // Reject effectively silent buffers: keep only classes within 25% of peak.
+  // Reject effectively silent buffers: keep only classes near the peak.
   final floor = peak * 0.04;
   final scores = <PitchClassScore>[
     for (var c = 0; c < 12; c++)
