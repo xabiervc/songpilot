@@ -42,6 +42,7 @@ jobs:
 
   build-android-apk:
     name: Build Android APK (release)
+    needs: [python-core-tests, analyze-test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +68,7 @@ jobs:
 
   build-ios:
     name: Build iOS (no codesign)
+    needs: [python-core-tests, analyze-test]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
