@@ -1,17 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../audio/chord_preview_player.dart';
+import '../audio/mic_note_listener.dart';
 import '../core/chord_shapes.dart';
 import '../core/music_theory.dart';
 import '../core/song_form.dart';
 import '../core/suggestion_engine.dart';
 import '../core/tab_shapes.dart';
+import '../dsp/pitch_detector.dart';
 import '../models/models.dart';
 import '../services/supabase_service.dart';
 import '../widgets/chord_palette.dart';
 
 /// Song editor: multi-section arrangement + chord palette + tabs editor +
-/// audio preview + suggestion panel + Supabase persistence.
+/// microphone note capture + audio preview + suggestions + persistence.
 class EditorScreen extends StatefulWidget {
   final String projectId;
   const EditorScreen({super.key, required this.projectId});
@@ -60,6 +64,8 @@ class _EditorScreenState extends State<EditorScreen> {
   late String _projectId;
 
   final ChordPreviewPlayer _previewPlayer = ChordPreviewPlayer();
+  final MicNoteListener _micListener = MicNoteListener();
+  Timer? _recordTimer;
 
   String _selectedKey = 'C';
   String _selectedStyle = 'rock';
@@ -71,6 +77,7 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _saving = false;
   bool _loading = false;
   bool _previewingAll = false;
+  bool _recording = false;
 
   final List<String> _styles = ['rock', 'pop', 'blues', 'jazz', 'indie'];
   final List<String> _moods = [
@@ -95,11 +102,13 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
+    _recordTimer?.cancel();
     _titleController.dispose();
     for (final draft in _sections) {
       draft.dispose();
     }
     _previewPlayer.dispose();
+    _micListener.dispose();
     super.dispose();
   }
 
@@ -253,6 +262,81 @@ class _EditorScreenState extends State<EditorScreen> {
     if (mounted) setState(() => _previewingAll = false);
   }
 
+  Future<void> _toggleRecording() async {
+    if (_recording) {
+      _recordTimer?.cancel();
+      final bytes = await _micListener.stopAndCollect();
+      if (!mounted) return;
+      setState(() => _recording = false);
+      final detected = detectTopNotesFromBytes(
+        bytes,
+        MicNoteListener.sampleRate,
+      );
+      if (!mounted) return;
+      _showDetectedNotes(detected);
+      return;
+    }
+
+    final started = await _micListener.start();
+    if (!mounted) return;
+    if (!started) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Microphone permission needed to capture notes')),
+      );
+      return;
+    }
+    setState(() => _recording = true);
+    _recordTimer = Timer(MicNoteListener.maxWindow, () {
+      if (_recording) _toggleRecording();
+    });
+  }
+
+  void _showDetectedNotes(List<PitchClassScore> notes) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Detected notes',
+                  style: Theme.of(sheetContext).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              if (notes.isEmpty)
+                const Text(
+                    "Couldn't pick out a clear note — try a louder, steadier sound.")
+              else ...[
+                Text(
+                  'Tap to add as a chord to the active section:',
+                  style: Theme.of(sheetContext).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final n in notes)
+                      ActionChip(
+                        label: Text(n.name),
+                        onPressed: () {
+                          _appendChord(n.name);
+                          Navigator.of(sheetContext).pop();
+                        },
+                      ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _saveProject() async {
     setState(() {
       _error = null;
@@ -368,10 +452,36 @@ class _EditorScreenState extends State<EditorScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                ChordPalette(
-                  chords: paletteChords(_selectedKey),
-                  onChordTap: _appendChord,
+                Row(
+                  children: [
+                    Expanded(
+                      child: ChordPalette(
+                        chords: paletteChords(_selectedKey),
+                        onChordTap: _appendChord,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: Icon(
+                        _recording ? Icons.stop_circle : Icons.mic_outlined,
+                        color: _recording
+                            ? Theme.of(context).colorScheme.error
+                            : null,
+                      ),
+                      tooltip: _recording
+                          ? 'Stop and detect notes'
+                          : 'Capture notes with microphone',
+                      onPressed: _toggleRecording,
+                    ),
+                  ],
                 ),
+                if (_recording)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text('Recording… tap the mic again to analyze',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error)),
+                  ),
                 const SizedBox(height: 20),
                 Row(
                   children: [
