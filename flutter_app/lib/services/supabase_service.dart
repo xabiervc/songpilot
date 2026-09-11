@@ -45,6 +45,17 @@ class ProfileService {
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     });
   }
+
+  /// Profiles of musicians who opted into collaboration (discovery feed).
+  Future<List<UserProfile>> listOpenProfiles({int limit = 50}) async {
+    final rows = await _client
+        .from('profiles')
+        .select()
+        .eq('open_to_collab', true)
+        .order('updated_at', ascending: false)
+        .limit(limit);
+    return [for (final r in rows) UserProfile.fromJson(r)];
+  }
 }
 
 /// CRUD for `songs` and their `song_sections`.
@@ -88,6 +99,17 @@ class ProjectService {
       project.addSection(SongSection.fromJson(row));
     }
     return project;
+  }
+
+  /// Public and collab-open songs for the discovery feed.
+  Future<List<SongProject>> listDiscoverableProjects({int limit = 50}) async {
+    final rows = await _client
+        .from('songs')
+        .select()
+        .inFilter('visibility', ['public', 'collab_open'])
+        .order('created_at', ascending: false)
+        .limit(limit);
+    return [for (final row in rows) SongProject.fromJson(row)];
   }
 
   /// Inserts the song when projectId is empty/'new', otherwise upserts it.
