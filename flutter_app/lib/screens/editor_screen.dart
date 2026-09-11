@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
-import '../core/suggestion_engine.dart';
-import '../core/music_theory.dart';
 
-/// Song editor: chord timeline + suggestion panel.
-/// This wires directly to the tested songpilot_core Dart logic
-/// (music_theory.dart, suggestion_engine.dart) for suggestions.
+import '../core/music_theory.dart';
+import '../core/suggestion_engine.dart';
+import '../models/models.dart';
+import '../services/supabase_service.dart';
+
+/// Song editor: chord input + suggestion panel + Supabase persistence.
+/// Suggestions come from the tested songpilot_core Dart logic
+/// (music_theory.dart, suggestion_engine.dart).
 class EditorScreen extends StatefulWidget {
   final String projectId;
   const EditorScreen({super.key, required this.projectId});
@@ -14,18 +17,49 @@ class EditorScreen extends StatefulWidget {
 }
 
 class _EditorScreenState extends State<EditorScreen> {
-  final _chordController = TextEditingController(text: 'C, F, G');
+  late final TextEditingController _chordController;
+  late final TextEditingController _titleController;
+  late String _projectId;
+
   String _selectedKey = 'C';
   String _selectedStyle = 'rock';
   String _selectedMood = 'driving';
   List<Suggestion> _suggestions = [];
   String? _error;
+  bool _saving = false;
 
   final List<String> _styles = ['rock', 'pop', 'blues', 'jazz', 'indie'];
   final List<String> _moods = [
-    'driving', 'uplifting', 'laidback', 'smooth', 'melancholic', 'bittersweet'
+    'driving',
+    'uplifting',
+    'laidback',
+    'smooth',
+    'melancholic',
+    'bittersweet'
   ];
   final List<String> _keys = noteNames;
+
+  @override
+  void initState() {
+    super.initState();
+    _projectId = widget.projectId;
+    _chordController = TextEditingController(text: 'C, F, G');
+    _titleController = TextEditingController();
+    _getSuggestions();
+  }
+
+  @override
+  void dispose() {
+    _chordController.dispose();
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  List<String> get _parsedChords => _chordController.text
+      .split(',')
+      .map((c) => c.trim())
+      .where((c) => c.isNotEmpty)
+      .toList();
 
   void _getSuggestions() {
     setState(() {
@@ -43,25 +77,73 @@ class _EditorScreenState extends State<EditorScreen> {
     });
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _getSuggestions();
-  }
+  Future<void> _saveProject() async {
+    setState(() {
+      _error = null;
+      _saving = true;
+    });
+    try {
+      final chords = _parsedChords;
+      for (final chord in chords) {
+        parseChord(chord); // validates; throws InvalidChordError on bad input
+      }
 
-  @override
-  void dispose() {
-    _chordController.dispose();
-    super.dispose();
+      final title = _titleController.text.trim();
+      final section = SongSection(
+        sectionType: SectionType.verse,
+        key: _selectedKey,
+        chords: chords,
+        barCount: chords.isEmpty ? 4 : chords.length,
+      );
+      final project = SongProject(
+        projectId: _projectId == 'new' ? '' : _projectId,
+        ownerId: '',
+        title: title.isEmpty ? 'Untitled song' : title,
+        key: _selectedKey,
+        style: _selectedStyle,
+        mood: _selectedMood,
+        sections: [section],
+      );
+
+      final saved = await ProjectService().saveProject(project);
+      if (!mounted) return;
+      setState(() => _projectId = saved.projectId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Song saved')),
+      );
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Song: ${widget.projectId}')),
+      appBar: AppBar(
+        title: Text('Song: $_projectId'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.save_outlined),
+            tooltip: 'Save song',
+            onPressed: _saving ? null : _saveProject,
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          TextField(
+            controller: _titleController,
+            decoration: const InputDecoration(
+              labelText: 'Song title',
+              hintText: 'e.g. Midnight Groove',
+            ),
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: _chordController,
             decoration: const InputDecoration(
@@ -79,7 +161,8 @@ class _EditorScreenState extends State<EditorScreen> {
                   items: _keys
                       .map((k) => DropdownMenuItem(value: k, child: Text(k)))
                       .toList(),
-                  onChanged: (v) => setState(() => _selectedKey = v ?? _selectedKey),
+                  onChanged: (v) =>
+                      setState(() => _selectedKey = v ?? _selectedKey),
                 ),
               ),
               const SizedBox(width: 12),
@@ -90,7 +173,8 @@ class _EditorScreenState extends State<EditorScreen> {
                   items: _styles
                       .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                       .toList(),
-                  onChanged: (v) => setState(() => _selectedStyle = v ?? _selectedStyle),
+                  onChanged: (v) =>
+                      setState(() => _selectedStyle = v ?? _selectedStyle),
                 ),
               ),
               const SizedBox(width: 12),
@@ -101,7 +185,8 @@ class _EditorScreenState extends State<EditorScreen> {
                   items: _moods
                       .map((m) => DropdownMenuItem(value: m, child: Text(m)))
                       .toList(),
-                  onChanged: (v) => setState(() => _selectedMood = v ?? _selectedMood),
+                  onChanged: (v) =>
+                      setState(() => _selectedMood = v ?? _selectedMood),
                 ),
               ),
             ],
@@ -114,7 +199,9 @@ class _EditorScreenState extends State<EditorScreen> {
           ),
           const SizedBox(height: 24),
           if (_error != null)
-            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            Text(_error!,
+                style:
+                    TextStyle(color: Theme.of(context).colorScheme.error)),
           Text('Suggestions', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
           ..._suggestions.map((s) => _SuggestionCard(suggestion: s)),
@@ -147,9 +234,7 @@ class _SuggestionCardState extends State<_SuggestionCard> {
           children: [
             Wrap(
               spacing: 8,
-              children: s.chords
-                  .map((c) => Chip(label: Text(c)))
-                  .toList(),
+              children: s.chords.map((c) => Chip(label: Text(c))).toList(),
             ),
             const SizedBox(height: 8),
             Text('${s.style} · ${s.mood}',

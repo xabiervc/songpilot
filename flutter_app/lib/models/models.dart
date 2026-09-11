@@ -1,5 +1,6 @@
 /// Core data models for SongPilot.
-/// Dart port of songpilot/songpilot_core/models.py.
+/// Dart port of songpilot/songpilot_core/models.py, extended with JSON
+/// (de)serialization used by the Supabase persistence layer.
 library models;
 
 enum SkillLevel { beginner, intermediate, advanced }
@@ -7,6 +8,49 @@ enum SkillLevel { beginner, intermediate, advanced }
 enum Visibility { private_, public_, collabOpen }
 
 enum SectionType { intro, verse, preChorus, chorus, bridge, outro, custom }
+
+String _skillLevelToString(SkillLevel level) => level.name;
+
+SkillLevel _skillLevelFromString(String? value) => SkillLevel.values.firstWhere(
+      (e) => e.name == value,
+      orElse: () => SkillLevel.intermediate,
+    );
+
+String _visibilityToString(Visibility visibility) => switch (visibility) {
+      Visibility.private_ => 'private',
+      Visibility.public_ => 'public',
+      Visibility.collabOpen => 'collab_open',
+    };
+
+Visibility _visibilityFromString(String? value) => switch (value) {
+      'public' => Visibility.public_,
+      'collab_open' => Visibility.collabOpen,
+      _ => Visibility.private_,
+    };
+
+const Map<SectionType, String> _sectionTypeNames = {
+  SectionType.intro: 'intro',
+  SectionType.verse: 'verse',
+  SectionType.preChorus: 'pre_chorus',
+  SectionType.chorus: 'chorus',
+  SectionType.bridge: 'bridge',
+  SectionType.outro: 'outro',
+  SectionType.custom: 'custom',
+};
+
+String _sectionTypeToString(SectionType type) =>
+    _sectionTypeNames[type] ?? 'custom';
+
+SectionType _sectionTypeFromString(String? value) =>
+    SectionType.values.firstWhere(
+      (e) => _sectionTypeNames[e] == value,
+      orElse: () => SectionType.custom,
+    );
+
+List<String> _stringListFromJson(Object? value) =>
+    (value as List<dynamic>? ?? const <dynamic>[])
+        .map((e) => e.toString())
+        .toList();
 
 class UserProfile {
   final String userId;
@@ -42,6 +86,37 @@ class UserProfile {
       throw ArgumentError('email must be valid');
     }
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': userId,
+        'username': username,
+        'email': email,
+        'skill_level': _skillLevelToString(skillLevel),
+        'instruments': instruments,
+        'genres': genres,
+        'favourite_artists': favouriteArtists,
+        'open_to_collab': openToCollab,
+        'looking_for': lookingFor,
+        'is_pro': isPro,
+      };
+
+  factory UserProfile.fromJson(Map<String, dynamic> json) {
+    final rawUsername = (json['username'] as String?)?.trim();
+    return UserProfile(
+      userId: json['id'] as String,
+      username: (rawUsername == null || rawUsername.isEmpty)
+          ? 'musician'
+          : rawUsername,
+      email: json['email'] as String? ?? 'unknown@unknown',
+      skillLevel: _skillLevelFromString(json['skill_level'] as String?),
+      instruments: _stringListFromJson(json['instruments']),
+      genres: _stringListFromJson(json['genres']),
+      favouriteArtists: _stringListFromJson(json['favourite_artists']),
+      openToCollab: json['open_to_collab'] as bool? ?? false,
+      lookingFor: _stringListFromJson(json['looking_for']),
+      isPro: json['is_pro'] as bool? ?? false,
+    );
+  }
 }
 
 class SongSection {
@@ -60,6 +135,22 @@ class SongSection {
       throw ArgumentError('barCount must be positive');
     }
   }
+
+  Map<String, dynamic> toJson(String songId, int position) => {
+        'song_id': songId,
+        'position': position,
+        'section_type': _sectionTypeToString(sectionType),
+        'key': key,
+        'chords': chords,
+        'bar_count': barCount,
+      };
+
+  factory SongSection.fromJson(Map<String, dynamic> json) => SongSection(
+        sectionType: _sectionTypeFromString(json['section_type'] as String?),
+        key: json['key'] as String? ?? 'C',
+        chords: _stringListFromJson(json['chords']),
+        barCount: (json['bar_count'] as num?)?.toInt() ?? 4,
+      );
 }
 
 class SongProject {
@@ -104,6 +195,34 @@ class SongProject {
   int totalBars() {
     return sections.fold(0, (sum, s) => sum + s.barCount);
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': projectId,
+        'owner_id': ownerId,
+        'title': title,
+        'key': key,
+        'tempo': tempo,
+        'style': style,
+        'mood': mood,
+        'instrument': instrument,
+        'visibility': _visibilityToString(visibility),
+        'created_at': createdAt.toIso8601String(),
+      };
+
+  factory SongProject.fromJson(Map<String, dynamic> json) => SongProject(
+        projectId: json['id'] as String,
+        ownerId: json['owner_id'] as String,
+        title: json['title'] as String? ?? 'Untitled song',
+        key: json['key'] as String? ?? 'C',
+        tempo: (json['tempo'] as num?)?.toInt() ?? 120,
+        style: json['style'] as String? ?? 'rock',
+        mood: json['mood'] as String? ?? 'driving',
+        instrument: json['instrument'] as String? ?? 'guitar',
+        visibility: _visibilityFromString(json['visibility'] as String?),
+        createdAt: json['created_at'] != null
+            ? DateTime.tryParse(json['created_at'].toString())
+            : null,
+      );
 }
 
 class CollaborationRequest {
@@ -130,4 +249,23 @@ class CollaborationRequest {
   void decline() {
     status = 'declined';
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': requestId,
+        'from_user': fromUserId,
+        'to_user': toUserId,
+        'song_id': projectId.isEmpty ? null : projectId,
+        'message': message,
+        'status': status,
+      };
+
+  factory CollaborationRequest.fromJson(Map<String, dynamic> json) =>
+      CollaborationRequest(
+        requestId: json['id'] as String,
+        fromUserId: json['from_user'] as String,
+        toUserId: json['to_user'] as String,
+        projectId: json['song_id'] as String? ?? '',
+        message: json['message'] as String? ?? '',
+        status: json['status'] as String? ?? 'pending',
+      );
 }
