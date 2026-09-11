@@ -1,0 +1,59 @@
+name: Snapshot and final validation (one-off)
+
+on:
+  push:
+    paths:
+      - .github/workflows/snapshot-selfcheck.yml
+
+permissions:
+  issues: write
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify editor_screen.dart deprecation lines (77 / 88 / 99)
+        run: sed -n '77p;88p;99p' flutter_app/lib/screens/editor_screen.dart
+      - name: Build snapshot markdown
+        run: |
+          {
+            echo 'Auto-generated snapshot of SongPilot key source files for the coding assistant.'
+            echo
+            for f in $(find flutter_app/lib flutter_app/test -type f | sort); do
+              echo "#### FILE: $f"
+              echo '````'
+              cat "$f"
+              echo '````'
+              echo
+            done
+            for f in flutter_app/pubspec.yaml flutter_app/analysis_options.yaml .github/workflows/flutter-ci.yml; do
+              echo "#### FILE: $f"
+              echo '````'
+              cat "$f"
+              echo '````'
+              echo
+            done
+          } > /tmp/snapshot.md
+      - name: Create snapshot issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh issue create --title "SNAPSHOT - repo source (auto-generated, safe to close)" --body-file /tmp/snapshot.md
+      - name: Remove one-off helper workflows
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/codemod-editor-deprecation.yml .github/workflows/snapshot-selfcheck.yml
+          git commit -m "chore: remove one-off helper workflows after codemod and snapshot"
+          git push
+      - name: Set up Flutter (latest stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: any
+      - name: Final analyzer validation
+        working-directory: flutter_app
+        run: |
+          flutter pub get
+          flutter analyze
