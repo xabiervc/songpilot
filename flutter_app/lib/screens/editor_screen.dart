@@ -5,12 +5,13 @@ import '../core/chord_shapes.dart';
 import '../core/music_theory.dart';
 import '../core/song_form.dart';
 import '../core/suggestion_engine.dart';
+import '../core/tab_shapes.dart';
 import '../models/models.dart';
 import '../services/supabase_service.dart';
 import '../widgets/chord_palette.dart';
 
-/// Song editor: multi-section arrangement + chord palette + audio preview +
-/// suggestion panel + Supabase persistence.
+/// Song editor: multi-section arrangement + chord palette + tabs editor +
+/// audio preview + suggestion panel + Supabase persistence.
 class EditorScreen extends StatefulWidget {
   final String projectId;
   const EditorScreen({super.key, required this.projectId});
@@ -24,14 +25,20 @@ class _SectionDraft {
   _SectionDraft({
     required this.sectionType,
     String chordsText = '',
+    String tabs = '',
     this.barCount = 4,
-  }) : chordsController = TextEditingController(text: chordsText);
+  })  : chordsController = TextEditingController(text: chordsText),
+        tabsController = TextEditingController(text: tabs);
 
   SectionType sectionType;
   final TextEditingController chordsController;
+  final TextEditingController tabsController;
   int barCount;
 
-  void dispose() => chordsController.dispose();
+  void dispose() {
+    chordsController.dispose();
+    tabsController.dispose();
+  }
 
   List<String> get parsedChords => chordsController.text
       .split(',')
@@ -44,6 +51,7 @@ class _SectionDraft {
         key: key,
         chords: parsedChords,
         barCount: barCount,
+        tabs: tabsController.text,
       );
 }
 
@@ -120,6 +128,7 @@ class _EditorScreenState extends State<EditorScreen> {
                   _SectionDraft(
                     sectionType: s.sectionType,
                     chordsText: s.chords.join(', '),
+                    tabs: s.tabs,
                     barCount: s.barCount,
                   ),
               ];
@@ -164,6 +173,15 @@ class _EditorScreenState extends State<EditorScreen> {
     draft.chordsController
       ..text = next
       ..selection = TextSelection.collapsed(offset: next.length);
+  }
+
+  void _generateTabsForSection(int index) {
+    if (index < 0 || index >= _sections.length) return;
+    final chords = _sections[index].parsedChords;
+    if (chords.isEmpty) return;
+    setState(() {
+      _sections[index].tabsController.text = tabsForProgression(chords);
+    });
   }
 
   void _addSection() {
@@ -384,6 +402,7 @@ class _EditorScreenState extends State<EditorScreen> {
                         isActive: i == _activeSectionIndex,
                         onFieldFocus: () => _markSectionActive(i),
                         onPreview: () => _previewSection(i),
+                        onGenerateTabs: () => _generateTabsForSection(i),
                         onRemove: () => _removeSection(i),
                         onMoveUp: () => _moveSection(i, -1),
                         onMoveDown: () => _moveSection(i, 1),
@@ -482,6 +501,7 @@ class _SectionCard extends StatelessWidget {
   final bool isActive;
   final VoidCallback onFieldFocus;
   final VoidCallback onPreview;
+  final VoidCallback onGenerateTabs;
   final VoidCallback onRemove;
   final VoidCallback onMoveUp;
   final VoidCallback onMoveDown;
@@ -494,6 +514,7 @@ class _SectionCard extends StatelessWidget {
     required this.isActive,
     required this.onFieldFocus,
     required this.onPreview,
+    required this.onGenerateTabs,
     required this.onRemove,
     required this.onMoveUp,
     required this.onMoveDown,
@@ -589,6 +610,35 @@ class _SectionCard extends StatelessWidget {
                   icon: const Icon(Icons.delete_outline),
                   tooltip: 'Remove section',
                   onPressed: totalSections > 1 ? onRemove : null,
+                ),
+              ],
+            ),
+            ExpansionTile(
+              title: Text('Tabs (guitar)',
+                  style: Theme.of(context).textTheme.labelLarge),
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilledButton.tonalIcon(
+                    onPressed: onGenerateTabs,
+                    icon: const Icon(Icons.auto_fix_high),
+                    label: const Text('Generate from chords'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: draft.tabsController,
+                  maxLines: 6,
+                  minLines: 6,
+                  style: const TextStyle(
+                      fontFamily: 'monospace', fontSize: 13),
+                  decoration: const InputDecoration(
+                    hintText: 'e|--0--|\nB|--1--|\nG|--0--|\nD|--2--|\nA|--3--|\nE|-----|',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
                 ),
               ],
             ),

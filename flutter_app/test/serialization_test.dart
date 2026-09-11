@@ -107,6 +107,31 @@ void main() {
       expect(restored.key, 'E');
     });
 
+    test('tabs default to empty and round trip', () {
+      final plain = SongSection(sectionType: SectionType.verse, key: 'C');
+      expect(plain.tabs, '');
+
+      final withTabs = SongSection(
+        sectionType: SectionType.verse,
+        key: 'C',
+        tabs: 'e|--0--|',
+      );
+      final json = withTabs.toJson('song-1', 0);
+      expect(json['tabs'], 'e|--0--|');
+      final restored = SongSection.fromJson(json);
+      expect(restored.tabs, 'e|--0--|');
+    });
+
+    test('missing tabs column falls back to empty string', () {
+      final restored = SongSection.fromJson(const {
+        'section_type': 'verse',
+        'key': 'C',
+        'chords': ['C'],
+        'bar_count': 4,
+      });
+      expect(restored.tabs, '');
+    });
+
     test('unknown section type falls back to custom', () {
       final restored = SongSection.fromJson(const {
         'section_type': 'something_new',

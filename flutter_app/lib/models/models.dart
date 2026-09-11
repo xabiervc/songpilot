@@ -124,12 +124,14 @@ class SongSection {
   final String key;
   final List<String> chords;
   final int barCount;
+  final String tabs;
 
   SongSection({
     required this.sectionType,
     required this.key,
     List<String>? chords,
     this.barCount = 4,
+    this.tabs = '',
   }) : chords = chords ?? [] {
     if (barCount <= 0) {
       throw ArgumentError('barCount must be positive');
@@ -143,6 +145,7 @@ class SongSection {
         'key': key,
         'chords': chords,
         'bar_count': barCount,
+        'tabs': tabs,
       };
 
   factory SongSection.fromJson(Map<String, dynamic> json) => SongSection(
@@ -150,6 +153,7 @@ class SongSection {
         key: json['key'] as String? ?? 'C',
         chords: _stringListFromJson(json['chords']),
         barCount: (json['bar_count'] as num?)?.toInt() ?? 4,
+        tabs: json['tabs'] as String? ?? '',
       );
 }
 
