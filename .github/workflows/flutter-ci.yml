@@ -1,83 +1,86 @@
 name: SongPilot Flutter CI
 
-# This workflow gives you real, verified builds without needing a local
-# Flutter/Xcode/Android SDK install. It runs `flutter test` (catching any
-# compile or logic errors), then builds an Android APK and an unsigned iOS
-# app on GitHub's cloud runners.
-#
-# The Flutter app lives in flutter_app/, so every step runs there.
-# iOS builds require macOS, which is why the ios job uses
-# `runs-on: macos-latest`. Signing for real App Store distribution needs
-# your Apple Developer certificates added as GitHub secrets — see
-# flutter_app/docs/CI_SETUP.md.
-
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
-defaults:
-  run:
-    working-directory: flutter_app
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
+  python-core-tests:
+    name: Core engine tests (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run core unit tests
+        run: python -m unittest discover -s tests -v
+
+  analyze-test:
     name: Analyze & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
-          channel: 'stable'
+          channel: stable
+          flutter-version: any
       - name: Install dependencies
+        working-directory: flutter_app
         run: flutter pub get
       - name: Analyze
+        working-directory: flutter_app
         run: flutter analyze
-      - name: Run tests
+      - name: Run Flutter tests
+        working-directory: flutter_app
         run: flutter test
 
-  build_android:
-    name: Build Android APK
-    needs: test
+  build-android-apk:
+    name: Build Android APK (release)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
-          flutter-version: '3.24.0'
-          channel: 'stable'
-      - name: Generate Android and iOS platform projects
-        run: flutter create --platforms=android,ios .
+          distribution: zulu
+          java-version: "17"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: any
+      - name: Generate Android platform project
+        working-directory: flutter_app
+        run: flutter create --platforms=android .
       - name: Install dependencies
+        working-directory: flutter_app
         run: flutter pub get
-      - name: Build APK
+      - name: Build release APK
+        working-directory: flutter_app
         run: flutter build apk --release
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: songpilot-android
-          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
 
-  build_ios:
-    name: Build iOS (unsigned)
-    needs: test
+  build-ios:
+    name: Build iOS (no codesign)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
-          channel: 'stable'
-      - name: Generate Android and iOS platform projects
-        run: flutter create --platforms=android,ios .
+          channel: stable
+          flutter-version: any
+      - name: Generate iOS platform project
+        working-directory: flutter_app
+        run: flutter create --platforms=ios .
       - name: Install dependencies
+        working-directory: flutter_app
         run: flutter pub get
-      - name: Build iOS (no codesign)
+      - name: Build iOS
+        working-directory: flutter_app
         run: flutter build ios --release --no-codesign
-      - name: Upload iOS build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: songpilot-ios-unsigned
-          path: flutter_app/build/ios/iphoneos/Runner.app
