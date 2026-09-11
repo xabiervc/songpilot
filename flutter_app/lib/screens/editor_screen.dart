@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../audio/chord_preview_player.dart';
+import '../core/chord_shapes.dart';
 import '../core/music_theory.dart';
 import '../core/song_form.dart';
 import '../core/suggestion_engine.dart';
 import '../models/models.dart';
 import '../services/supabase_service.dart';
+import '../widgets/chord_palette.dart';
 
-/// Song editor: multi-section arrangement + suggestion panel + persistence.
+/// Song editor: multi-section arrangement + chord palette + audio preview +
+/// suggestion panel + Supabase persistence.
 class EditorScreen extends StatefulWidget {
   final String projectId;
   const EditorScreen({super.key, required this.projectId});
@@ -47,14 +51,18 @@ class _EditorScreenState extends State<EditorScreen> {
   late final TextEditingController _titleController;
   late String _projectId;
 
+  final ChordPreviewPlayer _previewPlayer = ChordPreviewPlayer();
+
   String _selectedKey = 'C';
   String _selectedStyle = 'rock';
   String _selectedMood = 'driving';
   List<Suggestion> _suggestions = [];
   List<_SectionDraft> _sections = [];
+  int _activeSectionIndex = 0;
   String? _error;
   bool _saving = false;
   bool _loading = false;
+  bool _previewingAll = false;
 
   final List<String> _styles = ['rock', 'pop', 'blues', 'jazz', 'indie'];
   final List<String> _moods = [
@@ -83,6 +91,7 @@ class _EditorScreenState extends State<EditorScreen> {
     for (final draft in _sections) {
       draft.dispose();
     }
+    _previewPlayer.dispose();
     super.dispose();
   }
 
@@ -141,6 +150,22 @@ class _EditorScreenState extends State<EditorScreen> {
 
   int get _totalBars => _sections.fold(0, (sum, d) => sum + d.barCount);
 
+  void _markSectionActive(int index) {
+    _activeSectionIndex = index;
+  }
+
+  void _appendChord(String chord) {
+    if (_sections.isEmpty) return;
+    var index = _activeSectionIndex;
+    if (index < 0 || index >= _sections.length) index = _sections.length - 1;
+    final draft = _sections[index];
+    final current = draft.chordsController.text.trimRight();
+    final next = current.isEmpty ? chord : '$current, $chord';
+    draft.chordsController
+      ..text = next
+      ..selection = TextSelection.collapsed(offset: next.length);
+  }
+
   void _addSection() {
     setState(() =>
         _sections.add(_SectionDraft(sectionType: SectionType.verse)));
@@ -151,6 +176,9 @@ class _EditorScreenState extends State<EditorScreen> {
     setState(() {
       final removed = _sections.removeAt(index);
       removed.dispose();
+      if (_activeSectionIndex >= _sections.length) {
+        _activeSectionIndex = _sections.length - 1;
+      }
     });
   }
 
@@ -187,6 +215,24 @@ class _EditorScreenState extends State<EditorScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Suggestion added to arrangement')),
     );
+  }
+
+  Future<void> _previewSection(int index) async {
+    if (index < 0 || index >= _sections.length) return;
+    await _previewPlayer.playChords(_sections[index].parsedChords);
+  }
+
+  Future<void> _togglePreviewAll() async {
+    if (_previewingAll) {
+      await _previewPlayer.stop();
+      if (mounted) setState(() => _previewingAll = false);
+      return;
+    }
+    final chords = [for (final d in _sections) ...d.parsedChords];
+    if (chords.isEmpty) return;
+    setState(() => _previewingAll = true);
+    await _previewPlayer.playChords(chords);
+    if (mounted) setState(() => _previewingAll = false);
   }
 
   Future<void> _saveProject() async {
@@ -303,12 +349,24 @@ class _EditorScreenState extends State<EditorScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                ChordPalette(
+                  chords: paletteChords(_selectedKey),
+                  onChordTap: _appendChord,
+                ),
+                const SizedBox(height: 20),
                 Row(
                   children: [
                     Text('Arrangement',
                         style: Theme.of(context).textTheme.titleLarge),
                     const Spacer(),
+                    IconButton(
+                      icon: Icon(_previewingAll
+                          ? Icons.stop_circle_outlined
+                          : Icons.play_circle_outline),
+                      tooltip: 'Preview arrangement',
+                      onPressed: _togglePreviewAll,
+                    ),
                     Text('$_totalBars bars',
                         style: Theme.of(context).textTheme.labelMedium),
                   ],
@@ -323,6 +381,9 @@ class _EditorScreenState extends State<EditorScreen> {
                         index: i,
                         draft: _sections[i],
                         totalSections: _sections.length,
+                        isActive: i == _activeSectionIndex,
+                        onFieldFocus: () => _markSectionActive(i),
+                        onPreview: () => _previewSection(i),
                         onRemove: () => _removeSection(i),
                         onMoveUp: () => _moveSection(i, -1),
                         onMoveDown: () => _moveSection(i, 1),
@@ -362,6 +423,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     (s) => _SuggestionCard(
                       suggestion: s,
                       onApply: () => _applySuggestion(s),
+                      onPreview: () => _previewPlayer.playChords(s.chords),
                     ),
                   ),
               ],
@@ -417,6 +479,9 @@ class _SectionCard extends StatelessWidget {
   final int index;
   final _SectionDraft draft;
   final int totalSections;
+  final bool isActive;
+  final VoidCallback onFieldFocus;
+  final VoidCallback onPreview;
   final VoidCallback onRemove;
   final VoidCallback onMoveUp;
   final VoidCallback onMoveDown;
@@ -426,6 +491,9 @@ class _SectionCard extends StatelessWidget {
     required this.index,
     required this.draft,
     required this.totalSections,
+    required this.isActive,
+    required this.onFieldFocus,
+    required this.onPreview,
     required this.onRemove,
     required this.onMoveUp,
     required this.onMoveDown,
@@ -437,6 +505,12 @@ class _SectionCard extends StatelessWidget {
     final typeOptions = SectionType.values;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
+      shape: isActive
+          ? RoundedRectangleBorder(
+              side: BorderSide(color: Theme.of(context).colorScheme.primary),
+              borderRadius: BorderRadius.circular(12),
+            )
+          : null,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -468,6 +542,8 @@ class _SectionCard extends StatelessWidget {
             const SizedBox(height: 10),
             TextField(
               controller: draft.chordsController,
+              onTap: onFieldFocus,
+              onChanged: (_) => onFieldFocus(),
               decoration: const InputDecoration(
                 labelText: 'Chords (comma separated)',
                 hintText: 'e.g. Am, G, F, E',
@@ -495,6 +571,11 @@ class _SectionCard extends StatelessWidget {
                 ),
                 const Spacer(),
                 IconButton(
+                  icon: const Icon(Icons.play_arrow),
+                  tooltip: 'Preview section',
+                  onPressed: onPreview,
+                ),
+                IconButton(
                   icon: const Icon(Icons.arrow_upward),
                   tooltip: 'Move up',
                   onPressed: index > 0 ? onMoveUp : null,
@@ -521,8 +602,13 @@ class _SectionCard extends StatelessWidget {
 class _SuggestionCard extends StatefulWidget {
   final Suggestion suggestion;
   final VoidCallback onApply;
+  final VoidCallback onPreview;
 
-  const _SuggestionCard({required this.suggestion, required this.onApply});
+  const _SuggestionCard({
+    required this.suggestion,
+    required this.onApply,
+    required this.onPreview,
+  });
 
   @override
   State<_SuggestionCard> createState() => _SuggestionCardState();
@@ -551,6 +637,11 @@ class _SuggestionCardState extends State<_SuggestionCard> {
             const SizedBox(height: 8),
             Row(
               children: [
+                IconButton(
+                  icon: const Icon(Icons.play_circle_outline),
+                  tooltip: 'Preview suggestion',
+                  onPressed: widget.onPreview,
+                ),
                 TextButton(
                   onPressed: () =>
                       setState(() => _showTheory = !_showTheory),
