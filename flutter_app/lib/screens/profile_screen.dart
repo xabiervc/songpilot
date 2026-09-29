@@ -15,6 +15,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _openToCollab = false;
   bool _saving = false;
+  bool _requestingDeletion = false;
 
   @override
   void initState() {
@@ -58,6 +59,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _requestAccountDeletion() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Request account deletion?'),
+        content: const Text(
+          'We will begin deleting your SongPilot account and associated data '
+          'after securely processing this request. This action cannot be undone '
+          'once completed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Request deletion'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _requestingDeletion = true);
+    try {
+      await AccountService().requestAccountDeletion();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Your deletion request was received. We will notify you when it is processed.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not request account deletion: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _requestingDeletion = false);
+    }
+  }
+
   Future<void> _signOut() async {
     await supabase.auth.signOut();
   }
@@ -72,7 +123,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Text(user?.email ?? 'Not signed in',
               style: Theme.of(context).textTheme.titleMedium),
-          if (_saving) const LinearProgressIndicator(),
+          if (_saving || _requestingDeletion) const LinearProgressIndicator(),
           const SizedBox(height: 24),
           SwitchListTile(
             title: const Text('Open to collaboration'),
@@ -86,6 +137,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: Text('Plan'),
             subtitle: Text('Free'),
             trailing: Chip(label: Text('Upgrade to Pro')),
+          ),
+          const SizedBox(height: 24),
+          Text('Account', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ListTile(
+            leading: Icon(
+              Icons.delete_outline,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            title: const Text('Request account deletion'),
+            subtitle: const Text(
+              'Permanently delete your account and associated data',
+            ),
+            enabled: !_requestingDeletion,
+            onTap: _requestingDeletion ? null : _requestAccountDeletion,
           ),
           const SizedBox(height: 24),
           OutlinedButton(onPressed: _signOut, child: const Text('Log out')),

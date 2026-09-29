@@ -76,8 +76,6 @@ class ProjectService {
     return [for (final row in rows) SongProject.fromJson(row)];
   }
 
-  /// Loads a single song with its sections, ordered by section position.
-  /// Returns null if the song doesn't exist or isn't visible to the user.
   Future<SongProject?> getProject(String projectId) async {
     final userId = _requireUserId();
     final songRows = await _client
@@ -101,7 +99,6 @@ class ProjectService {
     return project;
   }
 
-  /// Public and collab-open songs for the discovery feed.
   Future<List<SongProject>> listDiscoverableProjects({int limit = 50}) async {
     final rows = await _client
         .from('songs')
@@ -112,9 +109,6 @@ class ProjectService {
     return [for (final row in rows) SongProject.fromJson(row)];
   }
 
-  /// Inserts the song when projectId is empty/'new', otherwise upserts it.
-  /// Sections are fully replaced for simplicity while the editor works on the
-  /// whole arrangement at once (cheap at small scale, consistent restore).
   Future<SongProject> saveProject(SongProject project) async {
     final userId = _requireUserId();
     final row = project.toJson()
@@ -188,5 +182,32 @@ class CollaborationService {
         .from('collab_requests')
         .update({'status': accept ? 'accepted' : 'declined'})
         .eq('id', requestId);
+  }
+}
+
+/// Lets an authenticated user create a traceable account-deletion request.
+///
+/// Deleting an identity in Supabase Auth requires an administrative service
+/// role. That operation must stay in a protected server-side process, never in
+/// a mobile client. The request is therefore stored for secure processing.
+class AccountService {
+  AccountService([SupabaseClient? client]) : _client = client ?? _client0;
+
+  static final SupabaseClient _client0 = Supabase.instance.client;
+
+  final SupabaseClient _client;
+
+  Future<void> requestAccountDeletion({String note = ''}) async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) {
+      throw StateError('You must be logged in to request account deletion.');
+    }
+
+    await _client.from('account_deletion_requests').upsert({
+      'user_id': userId,
+      'requested_at': DateTime.now().toUtc().toIso8601String(),
+      'status': 'pending',
+      'note': note,
+    }, onConflict: 'user_id');
   }
 }
