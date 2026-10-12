@@ -11,19 +11,28 @@ import 'screens/collab_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/profile_screen.dart';
 
-// TODO: replace with your real Supabase project URL and publishable key before
-// running. Get these from your Supabase project settings.
-const supabaseUrl = 'https://YOUR_PROJECT.supabase.co';
-const supabasePublishableKey = 'YOUR_ANON_KEY';
+// Supply values at run/build time; never commit project credentials.
+const supabaseUrl = String.fromEnvironment(
+  'SUPABASE_URL',
+  defaultValue: 'https://YOUR_PROJECT.supabase.co',
+);
+const supabasePublishableKey = String.fromEnvironment(
+  'SUPABASE_PUBLISHABLE_KEY',
+  defaultValue: 'YOUR_ANON_KEY',
+);
 
 const _onboardingDoneKey = 'onboarding_done';
 
-/// Whether the first-run introduction has been completed. Set in `main()`
-/// before [runApp] so other screens can assume it is initialized.
 late final bool onboardingDone;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (supabaseUrl.contains('YOUR_PROJECT') ||
+      supabasePublishableKey == 'YOUR_ANON_KEY') {
+    runApp(const _ConfigurationRequiredApp());
+    return;
+  }
 
   final prefs = await SharedPreferences.getInstance();
   onboardingDone = prefs.getBool(_onboardingDoneKey) ?? false;
@@ -34,6 +43,27 @@ Future<void> main() async {
   );
 
   runApp(const ProviderScope(child: SongPilotApp()));
+}
+
+class _ConfigurationRequiredApp extends StatelessWidget {
+  const _ConfigurationRequiredApp();
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'SongPilot needs Supabase configuration. Run Flutter with '
+                '--dart-define=SUPABASE_URL=... and '
+                '--dart-define=SUPABASE_PUBLISHABLE_KEY=...',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 final supabase = Supabase.instance.client;
