@@ -131,7 +131,7 @@ class _CollabScreenState extends State<CollabScreen> {
     if (_projects.isEmpty) const ListTile(title: Text('No open projects yet')),
     for (final p in _projects) Card(child: ListTile(
       title: Text(p.title), subtitle: Text('${p.key} · ${p.tempo} bpm · ${p.style} · ${p.mood}'),
-      trailing: p.ownerId == _myId ? const Chip(label: Text('Yours')) : Wrap(mainAxisSize: MainAxisSize.min, children: [
+      trailing: p.ownerId == _myId ? const Chip(label: Text('Yours')) : Wrap(children: [
         IconButton(tooltip: 'Report or block owner', icon: const Icon(Icons.more_vert), onPressed: () => _safetyMenu(userId: p.ownerId, songId: p.projectId)),
         FilledButton.tonal(onPressed: () => _sendRequest(toUserId: p.ownerId, projectId: p.projectId), child: const Text('Collab')),
       ]),
@@ -144,7 +144,7 @@ class _CollabScreenState extends State<CollabScreen> {
       if (profiles.isEmpty) const ListTile(title: Text('No collaborators found yet')),
       for (final p in profiles) Card(child: ListTile(
         title: Text(p.username), subtitle: Text([if (p.instruments.isNotEmpty) p.instruments.join(', '), if (p.genres.isNotEmpty) p.genres.join(', '), if (p.lookingFor.isNotEmpty) 'Looking for: ${p.lookingFor.join(', ')}'].join('\n')),
-        trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+        trailing: Wrap(children: [
           IconButton(tooltip: 'Report or block', icon: const Icon(Icons.more_vert), onPressed: () => _safetyMenu(userId: p.userId)),
           FilledButton.tonal(onPressed: () => _sendRequest(toUserId: p.userId), child: const Text('Collab')),
         ]),
@@ -156,7 +156,7 @@ class _CollabScreenState extends State<CollabScreen> {
     if (_requests.isEmpty) const ListTile(title: Text('No requests yet')),
     for (final r in _requests) Card(child: ListTile(
       title: Text('From ${_shortId(r.fromUserId)}'), subtitle: Text(r.message),
-      trailing: r.status == 'pending' ? Wrap(mainAxisSize: MainAxisSize.min, children: [
+      trailing: r.status == 'pending' ? Wrap(children: [
         IconButton(tooltip: 'Report or block', icon: const Icon(Icons.more_vert), onPressed: () => _safetyMenu(userId: r.fromUserId)),
         IconButton(icon: const Icon(Icons.check), onPressed: () => _respondTo(r, accept: true)),
         IconButton(icon: const Icon(Icons.close), onPressed: () => _respondTo(r, accept: false)),

@@ -11,8 +11,7 @@ void main() {
       'song_sections': <Map<String, dynamic>>[],
       'collab_requests': <Map<String, dynamic>>[],
     };
-    final decoded = jsonDecode(const JsonEncoder.withIndent('  ').convert(data))
-        as Map<String, dynamic>;
+    final decoded = jsonDecode(const JsonEncoder.withIndent('  ').convert(data)) as Map<String, dynamic>;
     expect(decoded['exported_at'], isNotEmpty);
     expect(decoded.keys, containsAll(['profile', 'songs', 'song_sections']));
   });

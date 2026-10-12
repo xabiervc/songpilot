@@ -11,118 +11,62 @@ import 'screens/collab_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/profile_screen.dart';
 
-// Supply values at run/build time; never commit project credentials.
-const supabaseUrl = String.fromEnvironment(
-  'SUPABASE_URL',
-  defaultValue: 'https://YOUR_PROJECT.supabase.co',
-);
-const supabasePublishableKey = String.fromEnvironment(
-  'SUPABASE_PUBLISHABLE_KEY',
-  defaultValue: 'YOUR_ANON_KEY',
-);
-
+const supabaseUrl = String.fromEnvironment('SUPABASE_URL', defaultValue: 'https://YOUR_PROJECT.supabase.co');
+const supabasePublishableKey = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY', defaultValue: 'YOUR_ANON_KEY');
 const _onboardingDoneKey = 'onboarding_done';
-
 late final bool onboardingDone;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  if (supabaseUrl.contains('YOUR_PROJECT') ||
-      supabasePublishableKey == 'YOUR_ANON_KEY') {
+  if (supabaseUrl.contains('YOUR_PROJECT') || supabasePublishableKey == 'YOUR_ANON_KEY') {
     runApp(const _ConfigurationRequiredApp());
     return;
   }
-
   final prefs = await SharedPreferences.getInstance();
   onboardingDone = prefs.getBool(_onboardingDoneKey) ?? false;
-
-  await Supabase.initialize(
-    url: supabaseUrl,
-    publishableKey: supabasePublishableKey,
-  );
-
+  await Supabase.initialize(url: supabaseUrl, publishableKey: supabasePublishableKey);
   runApp(const ProviderScope(child: SongPilotApp()));
 }
 
 class _ConfigurationRequiredApp extends StatelessWidget {
   const _ConfigurationRequiredApp();
-
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                'SongPilot needs Supabase configuration. Run Flutter with '
-                '--dart-define=SUPABASE_URL=... and '
-                '--dart-define=SUPABASE_PUBLISHABLE_KEY=...',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-        ),
-      );
+  Widget build(BuildContext context) => const MaterialApp(
+    home: Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text(
+      'SongPilot needs Supabase configuration. Run Flutter with --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...',
+      textAlign: TextAlign.center,
+    )))),
+  );
 }
 
 final supabase = Supabase.instance.client;
-
 final GoRouter _router = GoRouter(
   initialLocation: onboardingDone ? '/home' : '/onboarding',
   redirect: (context, state) {
     final loggedIn = supabase.auth.currentSession != null;
     final loc = state.matchedLocation;
-
-    if (!onboardingDone) {
-      return loc == '/onboarding' ? null : '/onboarding';
-    }
-    if (loc == '/onboarding') {
-      return loggedIn ? '/home' : '/auth';
-    }
-    if (!loggedIn && loc != '/auth') {
-      return '/auth';
-    }
-    if (loggedIn && loc == '/auth') {
-      return '/home';
-    }
+    if (!onboardingDone) return loc == '/onboarding' ? null : '/onboarding';
+    if (loc == '/onboarding') return loggedIn ? '/home' : '/auth';
+    if (!loggedIn && loc != '/auth') return '/auth';
+    if (loggedIn && loc == '/auth') return '/home';
     return null;
   },
   routes: [
-    GoRoute(
-        path: '/onboarding',
-        builder: (context, state) => const OnboardingScreen()),
+    GoRoute(path: '/onboarding', builder: (context, state) => const OnboardingScreen()),
     GoRoute(path: '/auth', builder: (context, state) => const AuthScreen()),
     GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
-    GoRoute(
-      path: '/editor/:projectId',
-      builder: (context, state) => EditorScreen(
-        projectId: state.pathParameters['projectId'] ?? 'new',
-      ),
-    ),
-    GoRoute(
-        path: '/collab', builder: (context, state) => const CollabScreen()),
-    GoRoute(
-        path: '/profile',
-        builder: (context, state) => const ProfileScreen()),
+    GoRoute(path: '/editor/:projectId', builder: (context, state) => EditorScreen(projectId: state.pathParameters['projectId'] ?? 'new')),
+    GoRoute(path: '/collab', builder: (context, state) => const CollabScreen()),
+    GoRoute(path: '/profile', builder: (context, state) => const ProfileScreen()),
   ],
 );
 
 class SongPilotApp extends StatelessWidget {
   const SongPilotApp({super.key});
-
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: 'SongPilot',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorSchemeSeed: const Color(0xFFFF6200),
-        scaffoldBackgroundColor: const Color(0xFF0F1419),
-      ),
-      routerConfig: _router,
-    );
-  }
+  Widget build(BuildContext context) => MaterialApp.router(
+    title: 'SongPilot', debugShowCheckedModeBanner: false,
+    theme: ThemeData(useMaterial3: true, brightness: Brightness.dark, colorSchemeSeed: const Color(0xFFFF6200), scaffoldBackgroundColor: const Color(0xFF0F1419)),
+    routerConfig: _router,
+  );
 }

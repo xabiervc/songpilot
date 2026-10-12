@@ -53,13 +53,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (id == null) throw StateError('Please sign in again.');
       await ProfileService().setOpenToCollab(id, value);
     } catch (e) {
-      if (mounted) {
-        setState(() => _openToCollab = old);
-        _showMessage('Could not save preference: $e');
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+      if (mounted) { setState(() => _openToCollab = old); _showMessage('Could not save preference: $e'); }
+    } finally { if (mounted) setState(() => _saving = false); }
   }
 
   void _showMessage(String message) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -73,19 +68,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final bytes = utf8.encode(json);
         final blob = html.Blob([bytes], 'application/json');
         final url = html.Url.createObjectUrlFromBlob(blob);
-        html.AnchorElement(href: url)
-          ..setAttribute('download', 'songpilot-data-export.json')
-          ..click();
+        html.AnchorElement(href: url)..setAttribute('download', 'songpilot-data-export.json')..click();
         html.Url.revokeObjectUrl(url);
       } else {
         await Clipboard.setData(ClipboardData(text: json));
       }
       if (mounted) _showMessage(kIsWeb ? 'Data export downloaded.' : 'Data export copied as JSON.');
-    } catch (e) {
-      if (mounted) _showMessage('Could not export data: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    } catch (e) { if (mounted) _showMessage('Could not export data: $e'); }
+    finally { if (mounted) setState(() => _busy = false); }
   }
 
   Future<void> _requestDeletion() async {
@@ -100,18 +90,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await AccountService().requestAccountDeletion();
       await _loadDeletionStatus();
       if (mounted) _showMessage('Deletion request submitted.');
-    } catch (e) {
-      if (mounted) _showMessage('Could not request deletion: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    } catch (e) { if (mounted) _showMessage('Could not request deletion: $e'); }
+    finally { if (mounted) setState(() => _busy = false); }
   }
 
   Future<void> _openPrivacyPolicy() async {
-    if (!privacyPolicyUrl.startsWith('https://')) {
-      _showMessage('Privacy policy URL has not been configured yet.');
-      return;
-    }
+    if (!privacyPolicyUrl.startsWith('https://')) { _showMessage('Privacy policy URL has not been configured yet.'); return; }
     final uri = Uri.tryParse(privacyPolicyUrl);
     if (uri == null || !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (mounted) _showMessage('Could not open privacy policy.');
