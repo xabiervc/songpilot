@@ -3,16 +3,22 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('JSON data export contains timestamp and exported sections', () {
-    final data = <String, dynamic>{
-      'exported_at': DateTime.utc(2026, 10, 12).toIso8601String(),
-      'profile': <Map<String, dynamic>>[],
-      'songs': <Map<String, dynamic>>[],
-      'song_sections': <Map<String, dynamic>>[],
-      'collab_requests': <Map<String, dynamic>>[],
+  test('SongPilot profile round-trips through JSON for data exports', () {
+    final profile = {
+      'id': 'user-123',
+      'username': 'test-musician',
+      'email': 'test@example.com',
+      'skill_level': 'intermediate',
+      'instruments': ['guitar'],
+      'genres': ['indie'],
+      'favourite_artists': <String>[],
+      'open_to_collab': true,
+      'looking_for': <String>[],
+      'is_pro': false,
     };
-    final decoded = jsonDecode(const JsonEncoder.withIndent('  ').convert(data)) as Map<String, dynamic>;
-    expect(decoded['exported_at'], isNotEmpty);
-    expect(decoded.keys, containsAll(['profile', 'songs', 'song_sections']));
+    final decoded = jsonDecode(jsonEncode(profile)) as Map<String, dynamic>;
+    expect(decoded['id'], 'user-123');
+    expect(decoded['instruments'], ['guitar']);
+    expect(decoded['open_to_collab'], isTrue);
   });
 }
