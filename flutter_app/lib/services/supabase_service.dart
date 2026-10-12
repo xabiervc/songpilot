@@ -190,22 +190,29 @@ class CommunitySafetyService {
   Future<void> blockUser(String blockedUserId) async {
     final userId = _requireUserId();
     if (blockedUserId == userId) throw ArgumentError('You cannot block your own account.');
-    await _client.from('user_blocks').upsert({'blocker_id': userId, 'blocked_id': blockedUserId}, onConflict: 'blocker_id,blocked_id');
+    await _client.from('user_blocks').upsert({
+      'blocker_id': userId, 'blocked_id': blockedUserId,
+    }, onConflict: 'blocker_id,blocked_id');
   }
 
   Future<void> unblockUser(String blockedUserId) async {
     final userId = _requireUserId();
-    await _client.from('user_blocks').delete().eq('blocker_id', userId).eq('blocked_id', blockedUserId);
+    await _client.from('user_blocks').delete()
+        .eq('blocker_id', userId).eq('blocked_id', blockedUserId);
   }
 
   Future<void> reportUser({required String reportedUserId, required String reason}) async {
     final userId = _requireUserId();
-    await _client.from('content_reports').insert({'reporter_id': userId, 'reported_user_id': reportedUserId, 'reason': reason.trim()});
+    await _client.from('content_reports').insert({
+      'reporter_id': userId, 'reported_user_id': reportedUserId, 'reason': reason.trim(),
+    });
   }
 
   Future<void> reportSong({required String songId, required String reason}) async {
     final userId = _requireUserId();
-    await _client.from('content_reports').insert({'reporter_id': userId, 'song_id': songId, 'reason': reason.trim()});
+    await _client.from('content_reports').insert({
+      'reporter_id': userId, 'song_id': songId, 'reason': reason.trim(),
+    });
   }
 
   Future<Set<String>> blockedUserIds() async {
