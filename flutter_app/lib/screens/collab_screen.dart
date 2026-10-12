@@ -46,37 +46,49 @@ class _CollabScreenState extends State<CollabScreen> {
     }
   }
 
+  void _message(String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+
   Future<void> _sendRequest({required String toUserId, String? projectId}) async {
     final message = await showDialog<String>(context: context, builder: (_) => const _CollabRequestDialog());
     if (message == null) return;
     try {
       await CollaborationService().sendRequest(toUserId: toUserId, projectId: projectId, message: message);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Collaboration request sent')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not send request: $e')));
-    }
+      if (mounted) _message('Collaboration request sent.');
+    } catch (e) { if (mounted) _message('Could not send request: $e'); }
   }
 
-  Future<void> _respondTo(CollaborationRequest request, {required bool accept}) async {
-    try { await CollaborationService().respond(request.requestId, accept: accept); await _load(); }
-    catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not update request: $e'))); }
+  Future<void> _respondTo(CollaborationRequest r, {required bool accept}) async {
+    try { await CollaborationService().respond(r.requestId, accept: accept); await _load(); }
+    catch (e) { if (mounted) _message('Could not update request: $e'); }
   }
 
-  Future<void> _safetyAction({required String userId, String? songId}) async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (ctx) => SafeArea(child: Wrap(children: [
-        ListTile(leading: const Icon(Icons.block), title: const Text('Block user'), onTap: () => Navigator.pop(ctx, 'block')),
-        ListTile(leading: const Icon(Icons.flag_outlined), title: const Text('Report'), onTap: () => Navigator.pop(ctx, 'report')),
-      ])),
-    );
+  Future<String?> _askReason() async {
+    final c = TextEditingController();
+    final value = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Report content'),
+      content: TextField(controller: c, maxLength: 500, maxLines: 3, decoration: const InputDecoration(hintText: 'Describe the issue (at least 3 characters)')),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')), FilledButton(onPressed: () { if (c.text.trim().length >= 3) Navigator.pop(ctx, c.text.trim()); }, child: const Text('Submit'))],
+    ));
+    c.dispose();
+    return value;
+  }
+
+  Future<void> _safetyMenu({required String userId, String? songId}) async {
+    final action = await showModalBottomSheet<String>(context: context, builder: (ctx) => SafeArea(child: Wrap(children: [
+      ListTile(leading: const Icon(Icons.block), title: const Text('Block user'), onTap: () => Navigator.pop(ctx, 'block')),
+      ListTile(leading: const Icon(Icons.flag_outlined), title: const Text('Report'), onTap: () => Navigator.pop(ctx, 'report')),
+    ])));
     if (action == null) return;
     try {
       if (action == 'block') {
+        final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+          title: const Text('Block this user?'), content: const Text('Their profiles and projects will be hidden from your collaboration lists.'),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Block'))],
+        ));
+        if (ok != true) return;
         await CommunitySafetyService().blockUser(userId);
         await _load();
+        if (mounted) _message('User blocked and hidden from your lists.');
       } else {
         final reason = await _askReason();
         if (reason == null) return;
@@ -85,22 +97,9 @@ class _CollabScreenState extends State<CollabScreen> {
         } else {
           await CommunitySafetyService().reportSong(songId: songId, reason: reason);
         }
+        if (mounted) _message('Report submitted.');
       }
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(action == 'block' ? 'User blocked and hidden from your lists.' : 'Report submitted.')));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Action failed: $e')));
-    }
-  }
-
-  Future<String?> _askReason() async {
-    final controller = TextEditingController();
-    final value = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('Report content'),
-      content: TextField(controller: controller, maxLength: 500, maxLines: 3, decoration: const InputDecoration(hintText: 'Describe the issue (at least 3 characters)')),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')), FilledButton(onPressed: () { final reason = controller.text.trim(); if (reason.length >= 3) Navigator.pop(ctx, reason); }, child: const Text('Submit'))],
-    ));
-    controller.dispose();
-    return value;
+    } catch (e) { if (mounted) _message('Action failed: $e'); }
   }
 
   String _shortId(String id) => id.length <= 8 ? id : '${id.substring(0, 8)}…';
@@ -133,7 +132,7 @@ class _CollabScreenState extends State<CollabScreen> {
     for (final p in _projects) Card(child: ListTile(
       title: Text(p.title), subtitle: Text('${p.key} · ${p.tempo} bpm · ${p.style} · ${p.mood}'),
       trailing: p.ownerId == _myId ? const Chip(label: Text('Yours')) : Wrap(mainAxisSize: MainAxisSize.min, children: [
-        IconButton(tooltip: 'Report project', icon: const Icon(Icons.flag_outlined), onPressed: () => _safetyAction(userId: p.ownerId, songId: p.projectId)),
+        IconButton(tooltip: 'Report or block owner', icon: const Icon(Icons.more_vert), onPressed: () => _safetyMenu(userId: p.ownerId, songId: p.projectId)),
         FilledButton.tonal(onPressed: () => _sendRequest(toUserId: p.ownerId, projectId: p.projectId), child: const Text('Collab')),
       ]),
     )),
@@ -146,7 +145,7 @@ class _CollabScreenState extends State<CollabScreen> {
       for (final p in profiles) Card(child: ListTile(
         title: Text(p.username), subtitle: Text([if (p.instruments.isNotEmpty) p.instruments.join(', '), if (p.genres.isNotEmpty) p.genres.join(', '), if (p.lookingFor.isNotEmpty) 'Looking for: ${p.lookingFor.join(', ')}'].join('\n')),
         trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
-          IconButton(tooltip: 'Block or report', icon: const Icon(Icons.more_vert), onPressed: () => _safetyAction(userId: p.userId)),
+          IconButton(tooltip: 'Report or block', icon: const Icon(Icons.more_vert), onPressed: () => _safetyMenu(userId: p.userId)),
           FilledButton.tonal(onPressed: () => _sendRequest(toUserId: p.userId), child: const Text('Collab')),
         ]),
       )),
@@ -158,7 +157,7 @@ class _CollabScreenState extends State<CollabScreen> {
     for (final r in _requests) Card(child: ListTile(
       title: Text('From ${_shortId(r.fromUserId)}'), subtitle: Text(r.message),
       trailing: r.status == 'pending' ? Wrap(mainAxisSize: MainAxisSize.min, children: [
-        IconButton(tooltip: 'Block or report', icon: const Icon(Icons.more_vert), onPressed: () => _safetyAction(userId: r.fromUserId)),
+        IconButton(tooltip: 'Report or block', icon: const Icon(Icons.more_vert), onPressed: () => _safetyMenu(userId: r.fromUserId)),
         IconButton(icon: const Icon(Icons.check), onPressed: () => _respondTo(r, accept: true)),
         IconButton(icon: const Icon(Icons.close), onPressed: () => _respondTo(r, accept: false)),
       ]) : Text(r.status),
