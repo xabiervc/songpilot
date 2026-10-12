@@ -10,6 +10,7 @@ import 'screens/editor_screen.dart';
 import 'screens/collab_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/moderation_screen.dart';
 
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL', defaultValue: 'https://YOUR_PROJECT.supabase.co');
 const supabasePublishableKey = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY', defaultValue: 'YOUR_ANON_KEY');
@@ -31,12 +32,7 @@ Future<void> main() async {
 class _ConfigurationRequiredApp extends StatelessWidget {
   const _ConfigurationRequiredApp();
   @override
-  Widget build(BuildContext context) => const MaterialApp(
-    home: Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text(
-      'SongPilot needs Supabase configuration. Run Flutter with --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...',
-      textAlign: TextAlign.center,
-    )))),
-  );
+  Widget build(BuildContext context) => const MaterialApp(home: Scaffold(body: Center(child: Padding(padding: EdgeInsets.all(24), child: Text('SongPilot needs Supabase configuration. Run Flutter with --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...', textAlign: TextAlign.center)))));
 }
 
 final supabase = Supabase.instance.client;
@@ -58,15 +54,12 @@ final GoRouter _router = GoRouter(
     GoRoute(path: '/editor/:projectId', builder: (context, state) => EditorScreen(projectId: state.pathParameters['projectId'] ?? 'new')),
     GoRoute(path: '/collab', builder: (context, state) => const CollabScreen()),
     GoRoute(path: '/profile', builder: (context, state) => const ProfileScreen()),
+    GoRoute(path: '/moderation', builder: (context, state) => const ModerationScreen()),
   ],
 );
 
 class SongPilotApp extends StatelessWidget {
   const SongPilotApp({super.key});
   @override
-  Widget build(BuildContext context) => MaterialApp.router(
-    title: 'SongPilot', debugShowCheckedModeBanner: false,
-    theme: ThemeData(useMaterial3: true, brightness: Brightness.dark, colorSchemeSeed: const Color(0xFFFF6200), scaffoldBackgroundColor: const Color(0xFF0F1419)),
-    routerConfig: _router,
-  );
+  Widget build(BuildContext context) => MaterialApp.router(title: 'SongPilot', debugShowCheckedModeBanner: false, theme: ThemeData(useMaterial3: true, brightness: Brightness.dark, colorSchemeSeed: const Color(0xFFFF6200), scaffoldBackgroundColor: const Color(0xFF0F1419)), routerConfig: _router);
 }
