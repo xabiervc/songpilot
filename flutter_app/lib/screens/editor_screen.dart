@@ -15,8 +15,6 @@ import '../models/models.dart';
 import '../services/supabase_service.dart';
 import '../widgets/chord_palette.dart';
 
-/// Song editor: multi-section arrangement + chord palette + tabs editor +
-/// microphone note capture + audio preview + suggestions + persistence.
 class EditorScreen extends StatefulWidget {
   final String projectId;
   const EditorScreen({super.key, required this.projectId});
@@ -136,10 +134,7 @@ class _EditorScreenState extends State<EditorScreen> {
     setState(() => _sections.add(_SectionDraft(sectionType: nextSectionAfter(lastType), chordsText: s.chords.join(', '), barCount: s.chords.length)));
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Suggestion added to arrangement')));
   }
-  void _toggleNaturalSound() {
-    setState(() => _naturalSound = !_naturalSound);
-    _previewPlayer.tone = _naturalSound ? SynthTone.plucked : SynthTone.pure;
-  }
+  void _toggleNaturalSound() { setState(() => _naturalSound = !_naturalSound); _previewPlayer.tone = _naturalSound ? SynthTone.plucked : SynthTone.pure; }
   Future<void> _previewSection(int index) async { if (index >= 0 && index < _sections.length) await _previewPlayer.playChords(_sections[index].parsedChords); }
   Future<void> _togglePreviewAll() async {
     if (_previewingAll) { await _previewPlayer.stop(); if (mounted) setState(() => _previewingAll = false); return; }
@@ -189,35 +184,22 @@ class _EditorScreenState extends State<EditorScreen> {
   }
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Song editor'), actions: [
-      IconButton(icon: Icon(_naturalSound ? Icons.graphic_eq : Icons.music_note_outlined), tooltip: _naturalSound ? 'Natural pluck sound: on' : 'Natural pluck sound: off', onPressed: _toggleNaturalSound),
-      if (_saving) const Padding(padding: EdgeInsets.only(right: 8), child: CircularProgressIndicator()) else IconButton(icon: const Icon(Icons.save_outlined), tooltip: 'Save song', onPressed: _saving || _loading ? null : _saveProject),
-    ]),
+    appBar: AppBar(title: const Text('Song editor'), actions: [IconButton(icon: Icon(_naturalSound ? Icons.graphic_eq : Icons.music_note_outlined), tooltip: _naturalSound ? 'Natural pluck sound: on' : 'Natural pluck sound: off', onPressed: _toggleNaturalSound), if (_saving) const Padding(padding: EdgeInsets.only(right: 8), child: CircularProgressIndicator()) else IconButton(icon: const Icon(Icons.save_outlined), tooltip: 'Save song', onPressed: _saving || _loading ? null : _saveProject)]),
     body: _loading && _sections.isEmpty ? const Center(child: CircularProgressIndicator()) : ListView(padding: const EdgeInsets.all(16), children: [
       TextField(controller: _titleController, decoration: const InputDecoration(labelText: 'Song title', hintText: 'e.g. Midnight Groove')),
       const SizedBox(height: 16),
-      Row(children: [
-        Expanded(child: DropdownButtonFormField<String>(initialValue: _selectedKey, decoration: const InputDecoration(labelText: 'Key'), items: _keys.map((k) => DropdownMenuItem(value: k, child: Text(k))).toList(), onChanged: (v) => setState(() => _selectedKey = v ?? _selectedKey))), const SizedBox(width: 12),
-        Expanded(child: DropdownButtonFormField<String>(initialValue: _selectedStyle, decoration: const InputDecoration(labelText: 'Style'), items: _styles.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => _selectedStyle = v ?? _selectedStyle))), const SizedBox(width: 12),
-        Expanded(child: DropdownButtonFormField<String>(initialValue: _selectedMood, decoration: const InputDecoration(labelText: 'Mood'), items: _moods.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(), onChanged: (v) => setState(() => _selectedMood = v ?? _selectedMood))),
-      ]),
-      const SizedBox(height: 16),
-      Row(children: [Expanded(child: ChordPalette(chords: paletteChords(_selectedKey), onChordTap: _appendChord)), const SizedBox(width: 8), IconButton(icon: Icon(_recording ? Icons.stop_circle : Icons.mic_outlined, color: _recording ? Theme.of(context).colorScheme.error : null), tooltip: _recording ? 'Stop and detect notes' : 'Capture notes with microphone', onPressed: _toggleRecording)]),
+      Row(children: [Expanded(child: DropdownButtonFormField<String>(initialValue: _selectedKey, decoration: const InputDecoration(labelText: 'Key'), items: _keys.map((k) => DropdownMenuItem(value: k, child: Text(k))).toList(), onChanged: (v) => setState(() => _selectedKey = v ?? _selectedKey))), const SizedBox(width: 12), Expanded(child: DropdownButtonFormField<String>(initialValue: _selectedStyle, decoration: const InputDecoration(labelText: 'Style'), items: _styles.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => _selectedStyle = v ?? _selectedStyle))), const SizedBox(width: 12), Expanded(child: DropdownButtonFormField<String>(initialValue: _selectedMood, decoration: const InputDecoration(labelText: 'Mood'), items: _moods.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(), onChanged: (v) => setState(() => _selectedMood = v ?? _selectedMood)))]),
+      const SizedBox(height: 16), Row(children: [Expanded(child: ChordPalette(chords: paletteChords(_selectedKey), onChordTap: _appendChord)), const SizedBox(width: 8), IconButton(icon: Icon(_recording ? Icons.stop_circle : Icons.mic_outlined, color: _recording ? Theme.of(context).colorScheme.error : null), tooltip: _recording ? 'Stop and detect notes' : 'Capture notes with microphone', onPressed: _toggleRecording)]),
       if (_recording) Padding(padding: const EdgeInsets.only(top: 8), child: Text('Recording… tap the mic again to analyze', style: TextStyle(color: Theme.of(context).colorScheme.error))),
-      const SizedBox(height: 20),
-      Row(children: [Text('Arrangement', style: Theme.of(context).textTheme.titleLarge), const Spacer(), IconButton(icon: Icon(_previewingAll ? Icons.stop_circle_outlined : Icons.play_circle_outline), tooltip: 'Preview arrangement', onPressed: _togglePreviewAll), Text('$_totalBars bars', style: Theme.of(context).textTheme.labelMedium)]),
-      const SizedBox(height: 12),
+      const SizedBox(height: 20), Row(children: [Text('Arrangement', style: Theme.of(context).textTheme.titleLarge), const Spacer(), IconButton(icon: Icon(_previewingAll ? Icons.stop_circle_outlined : Icons.play_circle_outline), tooltip: 'Preview arrangement', onPressed: _togglePreviewAll), Text('$_totalBars bars', style: Theme.of(context).textTheme.labelMedium)]), const SizedBox(height: 12),
       if (_sections.isEmpty) const _EmptyArrangementState() else for (var i = 0; i < _sections.length; i++) _SectionCard(index: i, draft: _sections[i], totalSections: _sections.length, isActive: i == _activeSectionIndex, onFieldFocus: () => _markSectionActive(i), onPreview: () => _previewSection(i), onGenerateTabs: () => _generateTabsForSection(i), onRemove: () => _removeSection(i), onMoveUp: () => _moveSection(i, -1), onMoveDown: () => _moveSection(i, 1), onBarsChanged: (d) => _changeBars(i, d)),
-      const SizedBox(height: 8), OutlinedButton.icon(onPressed: _addSection, icon: const Icon(Icons.add), label: const Text('Add section')), const SizedBox(height: 16),
-      OutlinedButton.icon(onPressed: _saving || _loading ? null : _saveProject, icon: const Icon(Icons.save_outlined), label: const Text('Save song')), const SizedBox(height: 24),
-      Text('Suggestions', style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 8),
-      FilledButton.icon(onPressed: _getSuggestions, icon: const Icon(Icons.auto_awesome), label: const Text('Suggest next')), const SizedBox(height: 12),
+      const SizedBox(height: 8), OutlinedButton.icon(onPressed: _addSection, icon: const Icon(Icons.add), label: const Text('Add section')), const SizedBox(height: 16), OutlinedButton.icon(onPressed: _saving || _loading ? null : _saveProject, icon: const Icon(Icons.save_outlined), label: const Text('Save song')), const SizedBox(height: 24),
+      Text('Suggestions', style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 8), FilledButton.icon(onPressed: _getSuggestions, icon: const Icon(Icons.auto_awesome), label: const Text('Suggest next')), const SizedBox(height: 12),
       if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
       if (_suggestions.isEmpty) const _EmptySuggestionsState() else ..._suggestions.map((s) => _SuggestionCard(suggestion: s, onApply: () => _applySuggestion(s), onPreview: () => _previewPlayer.playChords(s.chords))),
     ]),
   );
 }
-
 class _EmptyArrangementState extends StatelessWidget {
   const _EmptyArrangementState();
   @override
@@ -235,9 +217,9 @@ class _SectionCard extends StatelessWidget {
   const _SectionCard({required this.index, required this.draft, required this.totalSections, required this.isActive, required this.onFieldFocus, required this.onPreview, required this.onGenerateTabs, required this.onRemove, required this.onMoveUp, required this.onMoveDown, required this.onBarsChanged});
   @override
   Widget build(BuildContext context) {
-    final typeOptions = SectionType.values;
+    const typeOptions = SectionType.values;
     return Card(margin: const EdgeInsets.only(bottom: 12), child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [Text('${index + 1}'), const SizedBox(width: 12), Expanded(child: DropdownButtonFormField<SectionType>(initialValue: draft.sectionType, decoration: const InputDecoration(labelText: 'Section', isDense: true), items: typeOptions.map((t) => DropdownMenuItem(value: t, child: Text(sectionTypeLabels[t] ?? t.name)).toList(), onChanged: (t) => draft.sectionType = t ?? draft.sectionType))]),
+      Row(children: [Text('${index + 1}'), const SizedBox(width: 12), Expanded(child: DropdownButtonFormField<SectionType>(initialValue: draft.sectionType, decoration: const InputDecoration(labelText: 'Section', isDense: true), items: typeOptions.map((t) => DropdownMenuItem<SectionType>(value: t, child: Text(sectionTypeLabels[t] ?? t.name))).toList(), onChanged: (t) => draft.sectionType = t ?? draft.sectionType))]),
       const SizedBox(height: 10),
       TextField(controller: draft.chordsController, onTap: onFieldFocus, onChanged: (_) => onFieldFocus(), decoration: const InputDecoration(labelText: 'Chords (comma separated)', hintText: 'e.g. Am, G, F, E', isDense: true)),
       const SizedBox(height: 10),
@@ -258,8 +240,7 @@ class _SuggestionCardState extends State<_SuggestionCard> {
   Widget build(BuildContext context) {
     final s = widget.suggestion;
     return Card(margin: const EdgeInsets.only(bottom: 12), child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Wrap(spacing: 8, children: s.chords.map((c) => Chip(label: Text(c))).toList()),
-      const SizedBox(height: 8), Text('${s.style} · ${s.mood}', style: Theme.of(context).textTheme.labelMedium),
+      Wrap(spacing: 8, children: s.chords.map((c) => Chip(label: Text(c))).toList()), const SizedBox(height: 8), Text('${s.style} · ${s.mood}', style: Theme.of(context).textTheme.labelMedium),
       Row(children: [IconButton(icon: const Icon(Icons.play_circle_outline), tooltip: 'Preview suggestion', onPressed: widget.onPreview), TextButton(onPressed: () => setState(() => _showTheory = !_showTheory), child: Text(_showTheory ? 'Hide theory' : 'Why this works?')), const Spacer(), TextButton.icon(onPressed: widget.onApply, icon: const Icon(Icons.add), label: const Text('Add to arrangement'))]),
       if (_showTheory) Text(s.explanation),
     ])));
